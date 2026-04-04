@@ -1,4 +1,4 @@
-﻿# ЮрНавигатор (FastAPI)
+# ЮрНавигатор (FastAPI)
 
 Новый фронтенд взят из `C:\Users\Marse\OneDrive\Рабочий стол\Site2` и интегрирован в проект.
 
@@ -23,6 +23,8 @@
 pip install -r requirements.txt
 python -m app.seed
 uvicorn app.main:app --reload
+или
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8001
 ```
 
 Открыть: `http://127.0.0.1:8000`

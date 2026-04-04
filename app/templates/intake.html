@@ -1,34 +1,61 @@
-﻿{% extends "base.html" %}
-{% block title %}Публичная заявка{% endblock %}
+{% extends "base.html" %}
+{% block title %}Новая заявка{% endblock %}
 {% block content %}
 <section class="container page">
-  <h1>Публичная форма заявки</h1>
-  <p class="subtitle">Оставьте обращение. Система создаст карточку клиента, дело и первичную задачу.</p>
+  {% if user %}
+  <div class="workspace-layout">
+    <aside class="workspace-sidebar" aria-label="Разделы рабочего кабинета">
+      <p class="workspace-sidebar__title">Разделы</p>
+      {% include "_workspace_sidebar.html" %}
+    </aside>
+    <div class="workspace-content">
+      <h1>Новая заявка</h1>
+      <p class="subtitle">Опишите ситуацию. После отправки заявка попадет администратору, который назначит ответственного юриста.</p>
+  {% else %}
+  <h1>Подача заявки</h1>
+  <p class="subtitle">Для отправки заявки сначала зарегистрируйтесь как клиент и войдите в личный кабинет.</p>
+  {% endif %}
 
-  {% if success %}<p class="success">Заявка отправлена. Мы свяжемся с вами в ближайшее время.</p>{% endif %}
+  {% if success %}<p class="success">Заявка отправлена. Администратор получит обращение и свяжется с вами.</p>{% endif %}
 
-  <div class="table-card form-card">
-    <form method="post" action="/portal/intake" class="inline-form grid-2">
-      <label>ФИО / Название организации
-        <input type="text" name="full_name" required />
-      </label>
-      <label>Email
-        <input type="email" name="email" required />
-      </label>
-      <label>Телефон
-        <input type="text" name="phone" required />
-      </label>
-      <label>Категория обращения
-        <input type="text" name="category" placeholder="Например: договоры" required />
-      </label>
-      <label class="span-2">Тема обращения
-        <input type="text" name="case_title" required />
-      </label>
-      <label class="span-2">Описание проблемы
-        <textarea name="message" rows="5" placeholder="Опишите ситуацию и приложите ключевые детали"></textarea>
-      </label>
-      <button type="submit" class="auth-action">Отправить заявку</button>
-    </form>
+  {% if not user %}
+    <div class="table-card">
+      <p>После регистрации вы сможете отправлять обращения, отслеживать стадии дел и получать уведомления в личном кабинете клиента.</p>
+      <p><a href="/login" class="btn btn-main">Перейти к регистрации и входу</a></p>
+    </div>
+  {% elif not can_submit %}
+    <div class="table-card">
+      <p>Отправка заявки доступна только клиенту, у которого создана карточка профиля.</p>
+    </div>
+  {% else %}
+    <div class="table-card form-card">
+      <form method="post" action="/portal/intake" class="inline-form grid-2">
+        <label>ФИО / Название организации
+          <input type="text" name="full_name" value="{{ client_profile.name if client_profile else user.full_name }}" required />
+        </label>
+        <label>Email
+          <input type="email" name="email" value="{{ user.email }}" required />
+        </label>
+        <label>Телефон
+          <input type="text" name="phone" value="{{ user.phone }}" required />
+        </label>
+        <label>Категория обращения
+          <input type="text" name="category" placeholder="Например: договоры" required />
+        </label>
+        <label class="span-2">Тема обращения
+          <input type="text" name="case_title" required />
+        </label>
+        <label class="span-2">Описание проблемы
+          <textarea name="message" rows="5" placeholder="Опишите ситуацию и приложите ключевые детали"></textarea>
+        </label>
+        <button type="submit" class="auth-action form-submit-right">Отправить заявку</button>
+      </form>
+    </div>
+  {% endif %}
+
+  {% if user %}
+    </div>
   </div>
+  {% endif %}
 </section>
 {% endblock %}

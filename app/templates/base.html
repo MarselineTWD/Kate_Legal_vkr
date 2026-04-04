@@ -1,10 +1,10 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>{% block title %}ЮрНавигатор{% endblock %}</title>
-  <link rel="stylesheet" href="/site2static/strict.css" />
+  <link rel="stylesheet" href="/site2static/strict.css?v=20260405c" />
   {% block head %}{% endblock %}
 </head>
 <body class="{% if user %}cabinet-page{% endif %} {% block body_class %}{% endblock %}">
@@ -16,22 +16,12 @@
       </a>
       <nav class="nav">
         {% if user %}
-          <a href="/app">Кабинет</a>
-          <a href="/clients">Клиенты</a>
-          <a href="/cases">Дела</a>
-          <a href="/tasks">Задачи</a>
-          <a href="/calendar">Календарь</a>
-          <a href="/kanban">Канбан</a>
-          <a href="/notifications">Уведомления</a>
-          <a href="/invoices">Счета</a>
-          <a href="/audit">Журнал</a>
-          <a href="/portal/intake">Заявка</a>
-          <a href="/logout">Выйти</a>
+          <a href="/app">Главная</a>
+          <a href="/logout" class="nav-cta">Выйти</a>
         {% else %}
           <a href="/">Главная</a>
           <a href="/#contacts">Контакты</a>
-          <a href="/portal/intake">Оставить заявку</a>
-          <a href="/login">Войти</a>
+          <a href="/login" class="nav-cta">Войти</a>
         {% endif %}
       </nav>
     </div>
@@ -62,14 +52,27 @@
   {% endif %}
 
   {% if show_chat is not defined or show_chat %}
-  <div id="floating-chat" class="floating-chat" aria-live="polite">
-    <div class="floating-chat__title">Помощь по системе</div>
-    <p>Если возникли вопросы по делам, дедлайнам или документам, напишите администратору через внутренние комментарии.</p>
-    <button type="button" id="floating-chat-close">Скрыть</button>
-  </div>
+    {% if not user %}
+    <div id="floating-chat" class="floating-chat" aria-live="polite" data-chat-key="guest-cta">
+      <div class="floating-chat__title">Нужна юридическая помощь?</div>
+      <p>Войдите или зарегистрируйтесь, чтобы подать заявку и передать обращение администратору на рассмотрение.</p>
+      <div class="floating-chat__actions">
+        <a href="/login" class="floating-chat__link">Подать заявку</a>
+        <button type="button" id="floating-chat-close">Скрыть</button>
+      </div>
+    </div>
+    {% elif user.role.value == 'CLIENT' %}
+    <div id="floating-chat" class="floating-chat" aria-live="polite" data-chat-key="client-help">
+      <div class="floating-chat__title">Нужна помощь с кабинетом?</div>
+      <p>Если не получается подать заявку или найти нужный раздел, обратитесь к администратору. Он поможет и подскажет дальнейшие шаги.</p>
+      <div class="floating-chat__actions">
+        <button type="button" id="floating-chat-close">Понятно</button>
+      </div>
+    </div>
+    {% endif %}
   {% endif %}
 
-  <script src="/static/js/site.js"></script>
+  <script src="/static/js/site.js?v=20260405a"></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

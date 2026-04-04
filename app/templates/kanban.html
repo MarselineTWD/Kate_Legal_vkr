@@ -1,31 +1,160 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 {% block title %}Канбан{% endblock %}
 {% block content %}
 <section class="container page">
-  <h1>Канбан доска</h1>
-  <div class="kanban">
-    {% for st in stages %}
-      <div class="column">
-        <h3>{{ stage_labels[st] }}</h3>
-        {% for c in grouped[st] %}
-        <article class="card">
-          <strong>{{ c.case_number }}</strong>
-          <p>{{ c.title }}</p>
-          <small>{{ c.client.name if c.client else '-' }}</small>
-          <form method="post" action="/cases/{{ c.id }}/stage" class="compact-form compact-form-column">
-            <select name="stage">
-              {% for stage in stages %}
-              <option value="{{ stage.value }}" {% if stage == c.stage %}selected{% endif %}>{{ stage_labels[stage] }}</option>
+  <div class="workspace-layout">
+    <aside class="workspace-sidebar" aria-label="Разделы рабочего кабинета">
+      <p class="workspace-sidebar__title">Разделы</p>
+      {% include "_workspace_sidebar.html" %}
+    </aside>
+    <div class="workspace-content">
+      <h1>Канбан-доска дел</h1>
+      <p class="subtitle">Перетаскивайте карточки между колонками, чтобы менять стадию дела. Изменение сразу сохраняется в базе данных.</p>
+
+      <div class="kanban" id="kanban-board">
+        {% for st in stages %}
+          <div class="column kanban-column" data-stage="{{ st.value }}">
+            <h3>{{ stage_labels[st] }}</h3>
+            <div class="kanban-column__list">
+              {% for c in grouped[st] %}
+              <article class="card kanban-card" draggable="true" data-case-id="{{ c.id }}" data-stage="{{ c.stage.value }}">
+                <strong>{{ c.case_number }}</strong>
+                <p>{{ c.title }}</p>
+                <small>{{ c.client.name if c.client else '-' }}</small>
+                <form method="post" action="/cases/{{ c.id }}/stage" class="compact-form compact-form-column compact-form-right">
+                  <input type="hidden" name="next_url" value="/kanban" />
+                  <select name="stage">
+                    {% for stage in stages %}
+                    <option value="{{ stage.value }}" {% if stage == c.stage %}selected{% endif %}>{{ stage_labels[stage] }}</option>
+                    {% endfor %}
+                  </select>
+                  <button type="submit">Изменить</button>
+                </form>
+              </article>
+              {% else %}
+              <p class="muted kanban-empty">Нет дел на этой стадии</p>
               {% endfor %}
-            </select>
-            <button type="submit">Перевести</button>
-          </form>
-        </article>
-        {% else %}
-          <p class="muted">Нет дел на этой стадии</p>
+            </div>
+          </div>
         {% endfor %}
       </div>
-    {% endfor %}
+    </div>
   </div>
 </section>
+{% endblock %}
+{% block scripts %}
+<script>
+  (function () {
+    const board = document.getElementById('kanban-board');
+    if (!board) return;
+
+    const columns = Array.from(board.querySelectorAll('.kanban-column'));
+    let draggedCard = null;
+    let originList = null;
+
+    function updateEmptyState(column) {
+      const list = column.querySelector('.kanban-column__list');
+      if (!list) return;
+      let empty = list.querySelector('.kanban-empty');
+      const hasCards = Boolean(list.querySelector('.kanban-card'));
+      if (hasCards && empty) {
+        empty.remove();
+        return;
+      }
+      if (!hasCards && !empty) {
+        empty = document.createElement('p');
+        empty.className = 'muted kanban-empty';
+        empty.textContent = 'Нет дел на этой стадии';
+        list.appendChild(empty);
+      }
+    }
+
+    async function persistStage(card, nextStage, fallbackStage) {
+      const formData = new URLSearchParams();
+      formData.append('stage', nextStage);
+      formData.append('next_url', '/kanban');
+
+      const response = await fetch('/cases/' + card.dataset.caseId + '/stage', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
+        body: formData.toString()
+      });
+
+      if (!response.ok) {
+        throw new Error('Не удалось обновить стадию дела');
+      }
+
+      card.dataset.stage = nextStage;
+      const select = card.querySelector('select[name="stage"]');
+      if (select) {
+        select.value = nextStage;
+      }
+      return response.json();
+    }
+
+    board.querySelectorAll('.kanban-card').forEach((card) => {
+      card.addEventListener('dragstart', () => {
+        draggedCard = card;
+        originList = card.parentElement;
+        card.classList.add('is-dragging');
+      });
+
+      card.addEventListener('dragend', () => {
+        card.classList.remove('is-dragging');
+        columns.forEach((column) => column.classList.remove('is-drop-target'));
+        draggedCard = null;
+        originList = null;
+      });
+    });
+
+    columns.forEach((column) => {
+      const list = column.querySelector('.kanban-column__list');
+      if (!list) return;
+
+      column.addEventListener('dragover', (event) => {
+        event.preventDefault();
+        if (draggedCard) {
+          column.classList.add('is-drop-target');
+        }
+      });
+
+      column.addEventListener('dragleave', (event) => {
+        if (!column.contains(event.relatedTarget)) {
+          column.classList.remove('is-drop-target');
+        }
+      });
+
+      column.addEventListener('drop', async (event) => {
+        event.preventDefault();
+        column.classList.remove('is-drop-target');
+        if (!draggedCard || !originList) return;
+
+        const nextStage = column.dataset.stage;
+        const currentStage = draggedCard.dataset.stage;
+        if (!nextStage || nextStage === currentStage) return;
+
+        const targetList = column.querySelector('.kanban-column__list');
+        if (!targetList) return;
+
+        targetList.appendChild(draggedCard);
+        updateEmptyState(column);
+        columns.forEach(updateEmptyState);
+
+        try {
+          await persistStage(draggedCard, nextStage, currentStage);
+        } catch (error) {
+          originList.appendChild(draggedCard);
+          updateEmptyState(column);
+          columns.forEach(updateEmptyState);
+          alert('Не удалось сохранить новую стадию. Попробуйте еще раз.');
+        }
+      });
+    });
+
+    columns.forEach(updateEmptyState);
+  })();
+</script>
 {% endblock %}

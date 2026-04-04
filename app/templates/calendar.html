@@ -1,9 +1,17 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 {% block title %}Календарь дедлайнов{% endblock %}
 {% block content %}
 <section class="container page">
-  <h1>Календарь дедлайнов</h1>
-  <div id="calendar-grid" class="calendar-grid"></div>
+  <div class="workspace-layout">
+    <aside class="workspace-sidebar" aria-label="Разделы рабочего кабинета">
+      <p class="workspace-sidebar__title">Разделы</p>
+      {% include "_workspace_sidebar.html" %}
+    </aside>
+    <div class="workspace-content">
+      <h1>Календарь дедлайнов</h1>
+      <div id="calendar-grid" class="calendar-grid"></div>
+    </div>
+  </div>
 </section>
 {% endblock %}
 {% block scripts %}

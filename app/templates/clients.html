@@ -1,52 +1,64 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 {% block title %}Клиенты{% endblock %}
 {% block content %}
 <section class="container page">
-  <h1>Клиенты</h1>
+  <div class="workspace-layout">
+    <aside class="workspace-sidebar" aria-label="Разделы рабочего кабинета">
+      <p class="workspace-sidebar__title">Разделы</p>
+      {% include "_workspace_sidebar.html" %}
+    </aside>
+    <div class="workspace-content">
+      <h1>{% if user.role.value == 'ADMIN' %}Клиенты{% else %}Мои клиенты{% endif %}</h1>
 
-  {% if created %}<p class="success">Клиент успешно добавлен.</p>{% endif %}
+      {% if created %}<p class="success">Клиент успешно добавлен.</p>{% endif %}
 
-  <div class="table-card form-card">
-    <h2>Добавить клиента</h2>
-    <form method="post" action="/clients/new" class="inline-form grid-3">
-      <label>Название / ФИО
-        <input type="text" name="name" required />
-      </label>
-      <label>Тип
-        <select name="client_type">
-          <option value="ORGANIZATION">Организация</option>
-          <option value="PERSON">Физлицо</option>
-        </select>
-      </label>
-      <label>Email
-        <input type="email" name="email" />
-      </label>
-      <label>Телефон
-        <input type="text" name="phone" />
-      </label>
-      <label>Адрес
-        <input type="text" name="address" />
-      </label>
-      <label>Примечание
-        <input type="text" name="notes" />
-      </label>
-      <button type="submit" class="auth-action">Сохранить клиента</button>
-    </form>
-  </div>
+      {% if can_create_client %}
+      <div class="table-card form-card">
+        <h2>Добавить клиента</h2>
+        <form method="post" action="/clients/new" class="inline-form grid-3">
+          <label>Название / ФИО
+            <input type="text" name="name" required />
+          </label>
+          <label>Тип
+            <select name="client_type">
+              <option value="ORGANIZATION">Организация</option>
+              <option value="PERSON">Физлицо</option>
+            </select>
+          </label>
+          <label>Email
+            <input type="email" name="email" />
+          </label>
+          <label>Телефон
+            <input type="text" name="phone" />
+          </label>
+          <label>Адрес
+            <input type="text" name="address" />
+          </label>
+          <label>Примечание
+            <input type="text" name="notes" />
+          </label>
+          <button type="submit" class="auth-action">Сохранить клиента</button>
+        </form>
+      </div>
+      {% endif %}
 
-  <form class="search"><input name="q" value="{{ q }}" placeholder="Поиск по названию клиента" /></form>
+      <form class="search">
+        <input name="q" value="{{ q }}" placeholder="Поиск по названию клиента" />
+      </form>
 
-  <div class="table-card">
-    <table>
-      <thead><tr><th>Название</th><th>Тип</th><th>Email</th><th>Телефон</th></tr></thead>
-      <tbody>
-      {% for c in clients %}
-      <tr><td>{{ c.name }}</td><td>{{ c.client_type }}</td><td>{{ c.email }}</td><td>{{ c.phone }}</td></tr>
-      {% else %}
-      <tr><td colspan="4">Клиентов пока нет.</td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
+      <div class="table-card">
+        <table>
+          <thead><tr><th>Название</th><th>Тип</th><th>Email</th><th>Телефон</th></tr></thead>
+          <tbody>
+          {% for c in clients %}
+          <tr><td>{{ c.name }}</td><td>{{ c.client_type }}</td><td>{{ c.email }}</td><td>{{ c.phone }}</td></tr>
+          {% else %}
+          <tr><td colspan="4">Клиентов пока нет.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
   </div>
 </section>
 {% endblock %}
