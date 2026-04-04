@@ -1,0 +1,25 @@
+﻿{% extends "base.html" %}
+{% block title %}Журнал действий{% endblock %}
+{% block content %}
+<section class="container page">
+  <h1>Журнал действий пользователей</h1>
+
+  <div class="table-card">
+    <table>
+      <thead><tr><th>Дата</th><th>Пользователь</th><th>Действие</th><th>Детали</th></tr></thead>
+      <tbody>
+      {% for item in entries %}
+        <tr>
+          <td>{{ item.created_at.strftime('%d.%m.%Y %H:%M') }}</td>
+          <td>{{ users_map[item.user_id].full_name if item.user_id and item.user_id in users_map else 'Система' }}</td>
+          <td>{{ item.action }}</td>
+          <td>{{ item.details or '-' }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="4">Записей пока нет.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

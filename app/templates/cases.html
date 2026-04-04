@@ -1,0 +1,89 @@
+﻿{% extends "base.html" %}
+{% block title %}Дела{% endblock %}
+{% block content %}
+<section class="container page">
+  <h1>Юридические дела</h1>
+
+  {% if created %}<p class="success">Дело успешно создано.</p>{% endif %}
+
+  <div class="table-card form-card">
+    <h2>Создать дело</h2>
+    <form method="post" action="/cases/new" class="inline-form grid-3">
+      <label>Номер дела
+        <input type="text" name="case_number" value="{{ generated_case_number }}" />
+      </label>
+      <label>Название
+        <input type="text" name="title" required />
+      </label>
+      <label>Категория
+        <input type="text" name="category" placeholder="Например: договоры" required />
+      </label>
+      <label>Клиент
+        <select name="client_id" required>
+          {% for client in clients %}
+          <option value="{{ client.id }}">{{ client.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Ответственный юрист
+        <select name="responsible_lawyer_id">
+          <option value="">Не назначен</option>
+          {% for lawyer in lawyers %}
+          <option value="{{ lawyer.id }}">{{ lawyer.full_name or lawyer.username }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Дедлайн
+        <input type="date" name="deadline" />
+      </label>
+      <label>Стадия
+        <select name="stage">
+          {% for stage in stages %}
+          <option value="{{ stage.value }}">{{ stage_labels[stage] }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Приоритет
+        <select name="priority">
+          <option value="LOW">Низкий</option>
+          <option value="MEDIUM" selected>Средний</option>
+          <option value="HIGH">Высокий</option>
+        </select>
+      </label>
+      <label class="span-3">Описание
+        <textarea name="description" rows="3"></textarea>
+      </label>
+      <button type="submit" class="auth-action">Сохранить дело</button>
+    </form>
+  </div>
+
+  <div class="table-card">
+    <table>
+      <thead><tr><th>Номер</th><th>Название</th><th>Клиент</th><th>Стадия</th><th>TOPSIS</th><th>Изменить стадию</th></tr></thead>
+      <tbody>
+      {% for item in cases %}
+      <tr>
+        <td>{{ item.case_number }}</td>
+        <td>{{ item.title }}</td>
+        <td>{{ item.client.name if item.client else '-' }}</td>
+        <td>{{ stage_labels[item.stage] }}</td>
+        <td><a href="/cases/{{ item.id }}/topsis">Рекомендация</a></td>
+        <td>
+          <form method="post" action="/cases/{{ item.id }}/stage" class="compact-form">
+            <select name="stage">
+              {% for stage in stages %}
+              <option value="{{ stage.value }}" {% if stage == item.stage %}selected{% endif %}>{{ stage_labels[stage] }}</option>
+              {% endfor %}
+            </select>
+            <button type="submit">Обновить</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6">Дел пока нет.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,75 @@
+﻿<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}ЮрНавигатор{% endblock %}</title>
+  <link rel="stylesheet" href="/site2static/strict.css" />
+  {% block head %}{% endblock %}
+</head>
+<body class="{% if user %}cabinet-page{% endif %} {% block body_class %}{% endblock %}">
+  <header class="header site-header">
+    <div class="container header-inner">
+      <a href="{% if user %}/app{% else %}/{% endif %}" class="brand">
+        <img src="/site2static/images/default-logo.png" alt="Логотип" />
+        ЮрНавигатор
+      </a>
+      <nav class="nav">
+        {% if user %}
+          <a href="/app">Кабинет</a>
+          <a href="/clients">Клиенты</a>
+          <a href="/cases">Дела</a>
+          <a href="/tasks">Задачи</a>
+          <a href="/calendar">Календарь</a>
+          <a href="/kanban">Канбан</a>
+          <a href="/notifications">Уведомления</a>
+          <a href="/invoices">Счета</a>
+          <a href="/audit">Журнал</a>
+          <a href="/portal/intake">Заявка</a>
+          <a href="/logout">Выйти</a>
+        {% else %}
+          <a href="/">Главная</a>
+          <a href="/#contacts">Контакты</a>
+          <a href="/portal/intake">Оставить заявку</a>
+          <a href="/login">Войти</a>
+        {% endif %}
+      </nav>
+    </div>
+  </header>
+
+  {% block content %}{% endblock %}
+
+  {% if (show_footer is not defined or show_footer) and not user %}
+  <footer class="footer" id="contacts">
+    <div class="container footer-inner">
+      <div class="footer-top">
+        <div class="footer-contacts">
+          <h2>Контакты</h2>
+          <p>ООО «ЮрНавигатор»</p>
+          <p>г. Екатеринбург, ул. Ленина, 50</p>
+          <p>Телефон: +7 (343) 200-00-00</p>
+          <p>Email: info@lawworkspace.ru</p>
+          <p>Пн–Пт, 09:00–18:00</p>
+        </div>
+        <div class="footer-company">
+          <div class="footer-brand">ЮрНавигатор</div>
+          <p>Юридическая фирма полного цикла</p>
+        </div>
+      </div>
+      <div class="footer-copy">© 2026 ЮрНавигатор. Все права защищены.</div>
+    </div>
+  </footer>
+  {% endif %}
+
+  {% if show_chat is not defined or show_chat %}
+  <div id="floating-chat" class="floating-chat" aria-live="polite">
+    <div class="floating-chat__title">Помощь по системе</div>
+    <p>Если возникли вопросы по делам, дедлайнам или документам, напишите администратору через внутренние комментарии.</p>
+    <button type="button" id="floating-chat-close">Скрыть</button>
+  </div>
+  {% endif %}
+
+  <script src="/static/js/site.js"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

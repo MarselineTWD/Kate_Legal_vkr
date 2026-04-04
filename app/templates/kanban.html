@@ -1,0 +1,31 @@
+﻿{% extends "base.html" %}
+{% block title %}Канбан{% endblock %}
+{% block content %}
+<section class="container page">
+  <h1>Канбан доска</h1>
+  <div class="kanban">
+    {% for st in stages %}
+      <div class="column">
+        <h3>{{ stage_labels[st] }}</h3>
+        {% for c in grouped[st] %}
+        <article class="card">
+          <strong>{{ c.case_number }}</strong>
+          <p>{{ c.title }}</p>
+          <small>{{ c.client.name if c.client else '-' }}</small>
+          <form method="post" action="/cases/{{ c.id }}/stage" class="compact-form compact-form-column">
+            <select name="stage">
+              {% for stage in stages %}
+              <option value="{{ stage.value }}" {% if stage == c.stage %}selected{% endif %}>{{ stage_labels[stage] }}</option>
+              {% endfor %}
+            </select>
+            <button type="submit">Перевести</button>
+          </form>
+        </article>
+        {% else %}
+          <p class="muted">Нет дел на этой стадии</p>
+        {% endfor %}
+      </div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

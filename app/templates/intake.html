@@ -1,0 +1,34 @@
+﻿{% extends "base.html" %}
+{% block title %}Публичная заявка{% endblock %}
+{% block content %}
+<section class="container page">
+  <h1>Публичная форма заявки</h1>
+  <p class="subtitle">Оставьте обращение. Система создаст карточку клиента, дело и первичную задачу.</p>
+
+  {% if success %}<p class="success">Заявка отправлена. Мы свяжемся с вами в ближайшее время.</p>{% endif %}
+
+  <div class="table-card form-card">
+    <form method="post" action="/portal/intake" class="inline-form grid-2">
+      <label>ФИО / Название организации
+        <input type="text" name="full_name" required />
+      </label>
+      <label>Email
+        <input type="email" name="email" required />
+      </label>
+      <label>Телефон
+        <input type="text" name="phone" required />
+      </label>
+      <label>Категория обращения
+        <input type="text" name="category" placeholder="Например: договоры" required />
+      </label>
+      <label class="span-2">Тема обращения
+        <input type="text" name="case_title" required />
+      </label>
+      <label class="span-2">Описание проблемы
+        <textarea name="message" rows="5" placeholder="Опишите ситуацию и приложите ключевые детали"></textarea>
+      </label>
+      <button type="submit" class="auth-action">Отправить заявку</button>
+    </form>
+  </div>
+</section>
+{% endblock %}

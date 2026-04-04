@@ -1,0 +1,68 @@
+﻿{% extends "base.html" %}
+{% block title %}Авторизация{% endblock %}
+{% block body_class %}auth-page{% endblock %}
+{% block content %}
+<section class="container auth-wrap">
+  <div class="auth-card auth-card-wide">
+    <h1>Авторизация</h1>
+
+    {% if success %}<p class="success">{{ success }}</p>{% endif %}
+
+    <div class="auth-tabs">
+      <button type="button" class="auth-tab {% if active_tab == 'login' %}is-active{% endif %}" data-tab="login">Вход</button>
+      <button type="button" class="auth-tab {% if active_tab == 'register' %}is-active{% endif %}" data-tab="register">Регистрация</button>
+    </div>
+
+    <form method="post" action="/login" class="auth-form {% if active_tab == 'login' %}is-active{% endif %}" data-panel="login" novalidate>
+      {% if login_error %}<p class="error">{{ login_error }}</p>{% endif %}
+      <label for="login-email">Электронная почта</label>
+      <input id="login-email" type="email" name="email" value="{{ login_email }}" placeholder="name@example.com" required />
+      <label for="login-password">Пароль</label>
+      <input id="login-password" type="password" name="password" minlength="8" required />
+      <button type="submit" class="auth-action">Войти</button>
+    </form>
+
+    <form method="post" action="/register" class="auth-form {% if active_tab == 'register' %}is-active{% endif %}" data-panel="register" novalidate>
+      {% if register_error %}<p class="error">{{ register_error }}</p>{% endif %}
+
+      <label for="reg-last-name">Фамилия</label>
+      <input id="reg-last-name" type="text" name="last_name" value="{{ register_last_name }}" minlength="2" maxlength="60" pattern="[A-Za-zА-Яа-яЁё\-\s]{2,60}" placeholder="Иванов" required />
+
+      <label for="reg-first-name">Имя</label>
+      <input id="reg-first-name" type="text" name="first_name" value="{{ register_first_name }}" minlength="2" maxlength="60" pattern="[A-Za-zА-Яа-яЁё\-\s]{2,60}" placeholder="Иван" required />
+
+      <label for="reg-middle-name">Отчество</label>
+      <input id="reg-middle-name" type="text" name="middle_name" value="{{ register_middle_name }}" minlength="2" maxlength="60" pattern="[A-Za-zА-Яа-яЁё\-\s]{2,60}" placeholder="Иванович" />
+
+      <label for="reg-phone">Номер телефона</label>
+      <input id="reg-phone" type="tel" name="phone" value="{{ register_phone }}" minlength="10" maxlength="20" pattern="[+0-9()\-\s]{10,20}" placeholder="+7 (900) 000-00-00" required />
+
+      <label for="reg-email">Электронная почта</label>
+      <input id="reg-email" type="email" name="email" value="{{ register_email }}" placeholder="name@example.com" required />
+
+      <label for="reg-password">Пароль</label>
+      <input id="reg-password" type="password" name="password" minlength="8" placeholder="Минимум 8 символов" required />
+
+      <label for="reg-password-confirm">Повторите пароль</label>
+      <input id="reg-password-confirm" type="password" name="password_confirm" minlength="8" placeholder="Повторите пароль" required />
+
+      <button type="submit" class="auth-action">Зарегистрироваться</button>
+    </form>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+  (function () {
+    const tabs = document.querySelectorAll('.auth-tab');
+    const panels = document.querySelectorAll('.auth-form');
+    tabs.forEach((tab) => {
+      tab.addEventListener('click', () => {
+        const target = tab.dataset.tab;
+        tabs.forEach((t) => t.classList.toggle('is-active', t === tab));
+        panels.forEach((p) => p.classList.toggle('is-active', p.dataset.panel === target));
+      });
+    });
+  })();
+</script>
+{% endblock %}
