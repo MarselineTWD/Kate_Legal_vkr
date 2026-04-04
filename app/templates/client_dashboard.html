@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Личный кабинет клиента{% endblock %}
+{% block content %}
+<section class="container page">
+  <div class="workspace-layout">
+    <aside class="workspace-sidebar" aria-label="Разделы личного кабинета">
+      <p class="workspace-sidebar__title">Кабинет клиента</p>
+      {% include "_workspace_sidebar.html" %}
+    </aside>
+
+    <div class="workspace-content">
+      <div class="workspace-head">
+        <p class="workspace-label">Личный кабинет</p>
+        <h1>Здравствуйте, {{ user.first_name or user.full_name or user.username }}</h1>
+      </div>
+
+      <div class="kpis">
+        <article><span>Всего обращений</span><strong>{{ cases|length }}</strong></article>
+        <article><span>Активные дела</span><strong>{{ active_cases }}</strong></article>
+        <article><span>Новые заявки</span><strong>{{ new_requests }}</strong></article>
+        <article><span>Завершено</span><strong>{{ completed_cases }}</strong></article>
+        <article><span>Непрочитанные уведомления</span><strong>{{ notifications_unread }}</strong></article>
+      </div>
+
+      <div class="table-card">
+        <h2>Профиль клиента</h2>
+        <table>
+          <tbody>
+            <tr><th>ФИО / организация</th><td>{{ client_profile.name if client_profile else user.full_name }}</td></tr>
+            <tr><th>Email</th><td>{{ user.email }}</td></tr>
+            <tr><th>Телефон</th><td>{{ user.phone }}</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="table-card">
+        <h2>Последние обращения</h2>
+        <table>
+          <thead><tr><th>Номер</th><th>Название</th><th>Стадия</th><th>Дедлайн</th><th>Связь</th></tr></thead>
+          <tbody>
+          {% for item in cases %}
+            <tr>
+              <td><a href="/cases/{{ item.id }}">{{ item.case_number }}</a></td>
+              <td><a href="/cases/{{ item.id }}">{{ item.title }}</a></td>
+              <td>{{ stage_labels[item.stage] }}</td>
+              <td>{{ item.deadline.strftime('%d.%m.%Y') if item.deadline else 'Не назначен' }}</td>
+              <td><a href="/cases/{{ item.id }}/communication">Открыть чат</a></td>
+            </tr>
+          {% else %}
+            <tr><td colspan="5">Пока нет обращений. Вы можете подать первую заявку через раздел «Новая заявка».</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="table-card">
+        <h2>Последние уведомления</h2>
+        <table>
+          <thead><tr><th>Событие</th><th>Описание</th></tr></thead>
+          <tbody>
+          {% for item in last_notifications %}
+            <tr><td>{{ item.title }}</td><td>{{ item.message }}</td></tr>
+          {% else %}
+            <tr><td colspan="2">Уведомлений пока нет.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}

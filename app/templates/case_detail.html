@@ -1,0 +1,286 @@
+{% extends "base.html" %}
+{% block title %}Карточка дела{% endblock %}
+{% block content %}
+<section class="container page case-detail-page">
+  <div class="workspace-layout">
+    <aside class="workspace-sidebar" aria-label="Разделы рабочего кабинета">
+      <p class="workspace-sidebar__title">Разделы</p>
+      {% include "_workspace_sidebar.html" %}
+    </aside>
+
+    <div class="workspace-content">
+      <div class="workspace-head">
+        <p class="workspace-label">Карточка дела</p>
+        <h1>{{ legal_case.case_number }} — {{ legal_case.title }}</h1>
+        <p class="subtitle">Стадия: {{ stage_labels[legal_case.stage] }}. Клиент: {{ legal_case.client.name if legal_case.client else '-' }}.</p>
+      </div>
+
+      <div class="quick-links">
+        <a href="/cases" class="btn btn-main">Назад к делам</a>
+        <a href="#documents" class="btn btn-main">Документы</a>
+        <a href="#communication" class="btn btn-main">Чат по делу</a>
+      </div>
+
+      <div class="table-card">
+        <h2>Общая информация</h2>
+        <table>
+          <tbody>
+            <tr><th>Номер дела</th><td>{{ legal_case.case_number }}</td></tr>
+            <tr><th>Категория</th><td>{{ legal_case.category }}</td></tr>
+            <tr><th>Приоритет</th><td>{{ legal_case.priority }}</td></tr>
+            <tr><th>Дата открытия</th><td>{{ legal_case.opened_at.strftime('%d.%m.%Y') }}</td></tr>
+            <tr><th>Дедлайн</th><td>{{ legal_case.deadline.strftime('%d.%m.%Y') if legal_case.deadline else 'Не назначен' }}</td></tr>
+            <tr><th>Ответственный юрист</th><td>{{ legal_case.responsible_lawyer.full_name if legal_case.responsible_lawyer else 'Не назначен' }}</td></tr>
+            <tr><th>Описание</th><td>{{ legal_case.description or 'Описание пока не заполнено.' }}</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="detail-grid">
+        <div class="table-card form-card">
+          <h2>Загрузить документ</h2>
+          <form method="post" action="/cases/{{ legal_case.id }}/documents/upload" enctype="multipart/form-data" class="inline-form">
+            <label>Существующий документ
+              <select name="document_id">
+                <option value="">Создать новый документ</option>
+                {% for document in existing_documents %}
+                <option value="{{ document.id }}">{{ document.title }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label>Название документа
+              <input type="text" name="title" placeholder="Например: Договор аренды" />
+            </label>
+            <label>Файл
+              <input type="file" name="file" required />
+            </label>
+            <button type="submit" class="auth-action form-submit-right">Загрузить</button>
+          </form>
+        </div>
+
+        <div class="table-card form-card">
+          <h2>Создать по шаблону</h2>
+          <form method="post" action="/cases/{{ legal_case.id }}/documents/template" class="inline-form">
+            <label>Шаблон
+              <select name="template_id" required>
+                {% for template in document_templates %}
+                <option value="{{ template.id }}">{{ template.title }} — {{ template.category }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label>Существующий документ
+              <select name="document_id">
+                <option value="">Создать новый документ</option>
+                {% for document in existing_documents %}
+                <option value="{{ document.id }}">{{ document.title }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label>Название документа
+              <input type="text" name="title" placeholder="Оставьте пустым, чтобы использовать название шаблона" />
+            </label>
+            <button type="submit" class="auth-action form-submit-right">Создать документ</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="table-card" id="documents">
+        <h2>Документы и версии</h2>
+        {% if document_rows %}
+          <div class="document-list">
+            {% for row in document_rows %}
+            <article class="document-card">
+              <div class="document-card__head">
+                <strong>{{ row.document.title }}</strong>
+                <span>{{ row.versions_count }} верс.</span>
+              </div>
+              <p class="subtitle">Создан: {{ row.document.created_at.strftime('%d.%m.%Y %H:%M') }}. Автор: {{ row.document.created_by.full_name if row.document.created_by else 'Система' }}</p>
+              {% if row.latest %}
+              <p>Последняя версия: v{{ row.latest.version_number }}, {{ row.latest.original_name }}, {{ row.latest.created_at.strftime('%d.%m.%Y %H:%M') }}</p>
+              {% endif %}
+              <table>
+                <thead><tr><th>Версия</th><th>Тип</th><th>Дата</th><th>Автор</th><th>Скачать</th></tr></thead>
+                <tbody>
+                  {% for version in row.versions %}
+                  <tr>
+                    <td>v{{ version.version_number }}</td>
+                    <td>{{ 'Шаблон' if version.source.value == 'TEMPLATE' else 'Загрузка' }}</td>
+                    <td>{{ version.created_at.strftime('%d.%m.%Y %H:%M') }}</td>
+                    <td>{{ version.created_by.full_name if version.created_by else 'Система' }}</td>
+                    <td><a href="/documents/{{ row.document.id }}/versions/{{ version.id }}/download">Скачать</a></td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </article>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p class="muted">Документов по делу пока нет.</p>
+        {% endif %}
+      </div>
+
+      <div class="detail-grid" id="communication">
+        <div class="table-card">
+          <h2>Чат по делу</h2>
+          <p class="subtitle">Здесь ведется переписка между клиентом и юристами по выбранному делу.</p>
+          <div class="message-list chat-thread" id="public-chat-thread">
+            {% for item in public_messages %}
+            <article class="message-card chat-bubble{% if item.author_id == user.id %} chat-bubble--own{% endif %}">
+              <div class="message-card__head">
+                <strong>{{ item.author.full_name if item.author else 'Система' }}</strong>
+                <span>{{ item.created_at.strftime('%d.%m.%Y %H:%M') }}</span>
+              </div>
+              <p>{{ item.body }}</p>
+            </article>
+            {% endfor %}
+          </div>
+          <p class="muted{% if public_messages %} is-hidden{% endif %}" id="public-chat-empty">Сообщений пока нет.</p>
+
+          <div class="chat-composer">
+            <form method="post" action="/cases/{{ legal_case.id }}/messages" class="inline-form" id="chat-message-form" data-user-id="{{ user.id }}">
+              <label>Текст сообщения
+                <textarea name="body" rows="4" placeholder="Введите сообщение по делу" required id="chat-message-body"></textarea>
+              </label>
+              <div class="chat-composer__controls">
+                {% if can_leave_internal_comment %}
+                <label>Тип сообщения
+                  <select name="visibility" id="chat-message-visibility">
+                    <option value="PUBLIC">{{ visibility_labels[MessageVisibility.PUBLIC] if MessageVisibility is defined else 'Переписка с клиентом' }}</option>
+                    <option value="INTERNAL">{{ visibility_labels[MessageVisibility.INTERNAL] if MessageVisibility is defined else 'Внутренний комментарий' }}</option>
+                  </select>
+                </label>
+                {% endif %}
+                <button type="submit" class="auth-action form-submit-right">Отправить</button>
+              </div>
+            </form>
+            <p class="error is-hidden" id="chat-message-error"></p>
+          </div>
+        </div>
+
+        {% if can_leave_internal_comment %}
+        <div class="table-card">
+          <h2>Внутренние комментарии</h2>
+          <p class="subtitle">Этот блок видят только сотрудники. Клиенту внутренние комментарии недоступны.</p>
+          <div class="message-list chat-thread" id="internal-chat-thread">
+            {% for item in internal_messages %}
+            <article class="message-card message-card--internal chat-bubble{% if item.author_id == user.id %} chat-bubble--own{% endif %}">
+              <div class="message-card__head">
+                <strong>{{ item.author.full_name if item.author else 'Система' }}</strong>
+                <span>{{ item.created_at.strftime('%d.%m.%Y %H:%M') }}</span>
+              </div>
+              <p>{{ item.body }}</p>
+            </article>
+            {% endfor %}
+          </div>
+          <p class="muted{% if internal_messages %} is-hidden{% endif %}" id="internal-chat-empty">Внутренних комментариев пока нет.</p>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+  (function () {
+    const form = document.getElementById('chat-message-form');
+    const textarea = document.getElementById('chat-message-body');
+    const visibility = document.getElementById('chat-message-visibility');
+    const errorBox = document.getElementById('chat-message-error');
+    const publicThread = document.getElementById('public-chat-thread');
+    const internalThread = document.getElementById('internal-chat-thread');
+    const publicEmpty = document.getElementById('public-chat-empty');
+    const internalEmpty = document.getElementById('internal-chat-empty');
+    if (!form || !textarea || !publicThread) return;
+
+    function escapeHtml(value) {
+      return value
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+    }
+
+    function toggleEmptyState(targetThread, targetEmpty) {
+      if (!targetThread || !targetEmpty) return;
+      const hasMessages = Boolean(targetThread.querySelector('.message-card'));
+      targetEmpty.classList.toggle('is-hidden', hasMessages);
+    }
+
+    function appendMessage(message) {
+      const isInternal = message.visibility === 'INTERNAL';
+      const targetThread = isInternal ? internalThread : publicThread;
+      const targetEmpty = isInternal ? internalEmpty : publicEmpty;
+      if (!targetThread) return;
+
+      const isOwn = String(message.author_id) === String(form.dataset.userId);
+      const article = document.createElement('article');
+      article.className = 'message-card chat-bubble' + (isInternal ? ' message-card--internal' : '') + (isOwn ? ' chat-bubble--own' : '');
+      article.innerHTML = `
+        <div class="message-card__head">
+          <strong>${escapeHtml(message.author_name)}</strong>
+          <span>${escapeHtml(message.created_at)}</span>
+        </div>
+        <p>${escapeHtml(message.body).replaceAll('\n', '<br>')}</p>
+      `;
+      targetThread.appendChild(article);
+      toggleEmptyState(targetThread, targetEmpty);
+      targetThread.scrollTop = targetThread.scrollHeight;
+    }
+
+    async function submitMessage() {
+      const text = textarea.value.trim();
+      if (!text) return;
+
+      errorBox.textContent = '';
+      errorBox.classList.add('is-hidden');
+
+      const formData = new FormData(form);
+
+      try {
+        const response = await fetch(form.action, {
+          method: 'POST',
+          headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+          },
+          body: formData
+        });
+
+        if (!response.ok) {
+          throw new Error('Не удалось отправить сообщение.');
+        }
+
+        const payload = await response.json();
+        appendMessage(payload.message);
+        form.reset();
+        if (visibility) {
+          visibility.value = 'PUBLIC';
+        }
+        textarea.focus();
+      } catch (error) {
+        errorBox.textContent = error.message || 'Не удалось отправить сообщение.';
+        errorBox.classList.remove('is-hidden');
+      }
+    }
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      await submitMessage();
+    });
+
+    textarea.addEventListener('keydown', async (event) => {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        await submitMessage();
+      }
+    });
+
+    publicThread.scrollTop = publicThread.scrollHeight;
+    if (internalThread) {
+      internalThread.scrollTop = internalThread.scrollHeight;
+    }
+  })();
+</script>
+{% endblock %}

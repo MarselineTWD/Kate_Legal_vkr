@@ -1,13 +1,16 @@
-﻿(function () {
+(function () {
   const chat = document.getElementById('floating-chat');
   const closeBtn = document.getElementById('floating-chat-close');
   if (!chat || !closeBtn) return;
 
-  if (!sessionStorage.getItem('chat_shown')) {
+  const chatKey = chat.dataset.chatKey || 'default-chat';
+  const storageKey = 'chat_shown_' + chatKey;
+
+  if (!sessionStorage.getItem(storageKey)) {
     setTimeout(() => {
       chat.classList.add('show');
-      sessionStorage.setItem('chat_shown', '1');
-    }, 45000);
+      sessionStorage.setItem(storageKey, '1');
+    }, 1200);
   }
 
   closeBtn.addEventListener('click', () => chat.classList.remove('show'));

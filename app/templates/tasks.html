@@ -1,82 +1,95 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 {% block title %}Задачи{% endblock %}
 {% block content %}
 <section class="container page">
-  <h1>Задачи</h1>
+  <div class="workspace-layout">
+    <aside class="workspace-sidebar" aria-label="Разделы рабочего кабинета">
+      <p class="workspace-sidebar__title">Разделы</p>
+      {% include "_workspace_sidebar.html" %}
+    </aside>
+    <div class="workspace-content">
+      <h1>{% if user.role.value == 'ADMIN' %}Задачи{% else %}Мои задачи{% endif %}</h1>
 
-  {% if created %}<p class="success">Задача успешно создана.</p>{% endif %}
+      {% if created %}<p class="success">Задача успешно создана.</p>{% endif %}
 
-  <div class="table-card form-card">
-    <h2>Создать задачу</h2>
-    <form method="post" action="/tasks/new" class="inline-form grid-3">
-      <label>Дело
-        <select name="legal_case_id" required>
-          {% for legal_case in cases %}
-          <option value="{{ legal_case.id }}">{{ legal_case.case_number }} — {{ legal_case.title }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label>Название
-        <input type="text" name="title" required />
-      </label>
-      <label>Срок
-        <input type="date" name="due_date" required />
-      </label>
-      <label>Статус
-        <select name="status">
-          {% for status in statuses %}
-          <option value="{{ status.value }}">{{ status_labels[status] }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label>Приоритет
-        <select name="priority">
-          <option value="LOW">Низкий</option>
-          <option value="MEDIUM" selected>Средний</option>
-          <option value="HIGH">Высокий</option>
-        </select>
-      </label>
-      <label>Исполнитель
-        <select name="assignee_id">
-          <option value="">Не назначен</option>
-          {% for lawyer in lawyers %}
-          <option value="{{ lawyer.id }}">{{ lawyer.full_name or lawyer.username }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label class="span-3">Описание
-        <textarea name="description" rows="3"></textarea>
-      </label>
-      <button type="submit" class="auth-action">Сохранить задачу</button>
-    </form>
-  </div>
-
-  <div class="table-card">
-    <table>
-      <thead><tr><th>Задача</th><th>Дело</th><th>Срок</th><th>Статус</th><th>Изменить</th></tr></thead>
-      <tbody>
-      {% for t in tasks %}
-      <tr>
-        <td>{{ t.title }}</td>
-        <td>{{ t.legal_case.case_number if t.legal_case else '-' }}</td>
-        <td>{{ t.due_date.strftime('%d.%m.%Y') }}</td>
-        <td>{{ status_labels[t.status] }}</td>
-        <td>
-          <form method="post" action="/tasks/{{ t.id }}/status" class="compact-form">
-            <select name="status">
-              {% for status in statuses %}
-              <option value="{{ status.value }}" {% if status == t.status %}selected{% endif %}>{{ status_labels[status] }}</option>
+      <div class="table-card form-card">
+        <h2>Создать задачу</h2>
+        <form method="post" action="/tasks/new" class="inline-form grid-3">
+          <label>Дело
+            <select name="legal_case_id" required>
+              {% for legal_case in cases %}
+              <option value="{{ legal_case.id }}">{{ legal_case.case_number }} — {{ legal_case.title }}</option>
               {% endfor %}
             </select>
-            <button type="submit">Обновить</button>
-          </form>
-        </td>
-      </tr>
-      {% else %}
-      <tr><td colspan="5">Задач пока нет.</td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
+          </label>
+          <label>Название
+            <input type="text" name="title" required />
+          </label>
+          <label>Срок
+            <input type="date" name="due_date" required />
+          </label>
+          <label>Статус
+            <select name="status">
+              {% for status in statuses %}
+              <option value="{{ status.value }}">{{ status_labels[status] }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>Приоритет
+            <select name="priority">
+              <option value="LOW">Низкий</option>
+              <option value="MEDIUM" selected>Средний</option>
+              <option value="HIGH">Высокий</option>
+            </select>
+          </label>
+          <label>Исполнитель
+            <select name="assignee_id">
+              {% if not can_assign_other_lawyers %}
+              <option value="{{ user.id }}">{{ user.full_name or user.username }}</option>
+              {% else %}
+                <option value="">Не назначен</option>
+                {% for lawyer in lawyers %}
+                <option value="{{ lawyer.id }}">{{ lawyer.full_name or lawyer.username }}</option>
+                {% endfor %}
+              {% endif %}
+            </select>
+          </label>
+          <label class="span-3">Описание
+            <textarea name="description" rows="3"></textarea>
+          </label>
+          <button type="submit" class="auth-action">Сохранить задачу</button>
+        </form>
+      </div>
+
+      <div class="table-card">
+        <table>
+          <thead><tr><th>Задача</th><th>Дело</th><th>Срок</th><th>Статус</th><th>Исполнитель</th><th>Изменить</th></tr></thead>
+          <tbody>
+          {% for t in tasks %}
+          <tr>
+            <td>{{ t.title }}</td>
+            <td>{{ t.legal_case.case_number if t.legal_case else '-' }}</td>
+            <td>{{ t.due_date.strftime('%d.%m.%Y') }}</td>
+            <td>{{ status_labels[t.status] }}</td>
+            <td>{{ t.assignee.full_name if t.assignee else 'Не назначен' }}</td>
+            <td>
+              <form method="post" action="/tasks/{{ t.id }}/status" class="compact-form compact-form-right compact-form-stack-sm">
+                <select name="status">
+                  {% for status in statuses %}
+                  <option value="{{ status.value }}" {% if status == t.status %}selected{% endif %}>{{ status_labels[status] }}</option>
+                  {% endfor %}
+                </select>
+                <button type="submit">Обновить</button>
+              </form>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6">Задач пока нет.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
   </div>
 </section>
 {% endblock %}

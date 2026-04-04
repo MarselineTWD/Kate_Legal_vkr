@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import enum
 from datetime import date, datetime
@@ -13,6 +13,7 @@ from .encryption import EncryptedText
 class Role(str, enum.Enum):
     ADMIN = "ADMIN"
     LAWYER = "LAWYER"
+    CLIENT = "CLIENT"
 
 
 class CaseStage(str, enum.Enum):
@@ -27,6 +28,16 @@ class TaskStatus(str, enum.Enum):
     TODO = "TODO"
     IN_PROGRESS = "IN_PROGRESS"
     DONE = "DONE"
+
+
+class DocumentSource(str, enum.Enum):
+    UPLOAD = "UPLOAD"
+    TEMPLATE = "TEMPLATE"
+
+
+class MessageVisibility(str, enum.Enum):
+    PUBLIC = "PUBLIC"
+    INTERNAL = "INTERNAL"
 
 
 case_lawyers = Base.metadata.tables.get("case_lawyers")
@@ -54,11 +65,14 @@ class User(Base):
     phone: Mapped[str] = mapped_column(EncryptedText, default="")
     password_hash: Mapped[str] = mapped_column(String(255))
     role: Mapped[Role] = mapped_column(Enum(Role), default=Role.LAWYER)
+    client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id"), nullable=True)
     specialization: Mapped[str] = mapped_column(String(120), default="")
     current_load: Mapped[int] = mapped_column(Integer, default=0)
     similar_cases_experience: Mapped[int] = mapped_column(Integer, default=0)
     avg_task_days: Mapped[float] = mapped_column(Float, default=7.0)
     deadline_success_rate: Mapped[float] = mapped_column(Float, default=85.0)
+
+    client_profile: Mapped["Client | None"] = relationship(foreign_keys=[client_id], uselist=False)
 
 
 class Client(Base):
@@ -94,6 +108,8 @@ class LegalCase(Base):
     responsible_lawyer: Mapped[User | None] = relationship(foreign_keys=[responsible_lawyer_id])
     lawyers: Mapped[list[User]] = relationship(secondary=case_lawyers)
     tasks: Mapped[list[CaseTask]] = relationship(back_populates="legal_case")
+    documents: Mapped[list["CaseDocument"]] = relationship(back_populates="legal_case")
+    messages: Mapped[list["CaseMessage"]] = relationship(back_populates="legal_case")
 
 
 class CaseTask(Base):
@@ -110,6 +126,61 @@ class CaseTask(Base):
 
     legal_case: Mapped[LegalCase] = relationship(back_populates="tasks")
     assignee: Mapped[User | None] = relationship(foreign_keys=[assignee_id])
+
+
+class DocumentTemplate(Base):
+    __tablename__ = "document_templates"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    category: Mapped[str] = mapped_column(String(120), default="Общее")
+    body: Mapped[str] = mapped_column(Text)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class CaseDocument(Base):
+    __tablename__ = "case_documents"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    legal_case_id: Mapped[int] = mapped_column(ForeignKey("legal_cases.id"))
+    title: Mapped[str] = mapped_column(String(255))
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    legal_case: Mapped[LegalCase] = relationship(back_populates="documents")
+    created_by: Mapped[User | None] = relationship(foreign_keys=[created_by_id])
+    versions: Mapped[list["DocumentVersion"]] = relationship(back_populates="document", order_by="DocumentVersion.version_number")
+
+
+class DocumentVersion(Base):
+    __tablename__ = "document_versions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id: Mapped[int] = mapped_column(ForeignKey("case_documents.id"))
+    version_number: Mapped[int] = mapped_column(Integer, default=1)
+    source: Mapped[DocumentSource] = mapped_column(Enum(DocumentSource), default=DocumentSource.UPLOAD)
+    original_name: Mapped[str] = mapped_column(String(255))
+    stored_path: Mapped[str] = mapped_column(String(500))
+    mime_type: Mapped[str] = mapped_column(String(120), default="application/octet-stream")
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    document: Mapped[CaseDocument] = relationship(back_populates="versions")
+    created_by: Mapped[User | None] = relationship(foreign_keys=[created_by_id])
+
+
+class CaseMessage(Base):
+    __tablename__ = "case_messages"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    legal_case_id: Mapped[int] = mapped_column(ForeignKey("legal_cases.id"))
+    author_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    body: Mapped[str] = mapped_column(Text)
+    visibility: Mapped[MessageVisibility] = mapped_column(Enum(MessageVisibility), default=MessageVisibility.PUBLIC)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    legal_case: Mapped[LegalCase] = relationship(back_populates="messages")
+    author: Mapped[User | None] = relationship(foreign_keys=[author_id])
 
 
 class CalendarEvent(Base):

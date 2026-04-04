@@ -1,2 +1,2 @@
-﻿python -m app.seed
+python -m app.seed
 uvicorn app.main:app --reload

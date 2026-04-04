@@ -1,58 +1,66 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 {% block title %}Счета{% endblock %}
 {% block content %}
 <section class="container page">
-  <h1>Счета и платежи</h1>
+  <div class="workspace-layout">
+    <aside class="workspace-sidebar" aria-label="Разделы рабочего кабинета">
+      <p class="workspace-sidebar__title">Разделы</p>
+      {% include "_workspace_sidebar.html" %}
+    </aside>
+    <div class="workspace-content">
+      <h1>Счета и платежи</h1>
 
-  {% if created %}<p class="success">Счет успешно создан.</p>{% endif %}
+      {% if created %}<p class="success">Счет успешно создан.</p>{% endif %}
 
-  <div class="table-card form-card">
-    <h2>Создать счет</h2>
-    <form method="post" action="/invoices/new" class="inline-form grid-3">
-      <label>Номер счета
-        <input type="text" name="number" required />
-      </label>
-      <label>Сумма
-        <input type="number" name="amount" step="0.01" min="0" required />
-      </label>
-      <label>Срок оплаты
-        <input type="date" name="due_date" required />
-      </label>
-      <label>Дело
-        <select name="legal_case_id" required>
-          {% for legal_case in cases %}
-          <option value="{{ legal_case.id }}">{{ legal_case.case_number }} — {{ legal_case.title }}</option>
+      <div class="table-card form-card">
+        <h2>Создать счет</h2>
+        <form method="post" action="/invoices/new" class="inline-form grid-3">
+          <label>Номер счета
+            <input type="text" name="number" required />
+          </label>
+          <label>Сумма
+            <input type="number" name="amount" step="0.01" min="0" required />
+          </label>
+          <label>Срок оплаты
+            <input type="date" name="due_date" required />
+          </label>
+          <label>Дело
+            <select name="legal_case_id" required>
+              {% for legal_case in cases %}
+              <option value="{{ legal_case.id }}">{{ legal_case.case_number }} — {{ legal_case.title }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>Статус
+            <select name="status">
+              <option value="ISSUED">Выставлен</option>
+              <option value="PAID">Оплачен</option>
+              <option value="OVERDUE">Просрочен</option>
+            </select>
+          </label>
+          <button type="submit" class="auth-action">Сохранить счет</button>
+        </form>
+      </div>
+
+      <div class="table-card">
+        <table>
+          <thead><tr><th>Номер</th><th>Сумма</th><th>Срок оплаты</th><th>Статус</th><th>ID дела</th></tr></thead>
+          <tbody>
+          {% for item in invoices %}
+            <tr>
+              <td>{{ item.number }}</td>
+              <td>{{ item.amount }}</td>
+              <td>{{ item.due_date.strftime('%d.%m.%Y') }}</td>
+              <td>{{ item.status }}</td>
+              <td>{{ item.legal_case_id }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="5">Счета пока не созданы.</td></tr>
           {% endfor %}
-        </select>
-      </label>
-      <label>Статус
-        <select name="status">
-          <option value="ISSUED">Выставлен</option>
-          <option value="PAID">Оплачен</option>
-          <option value="OVERDUE">Просрочен</option>
-        </select>
-      </label>
-      <button type="submit" class="auth-action">Сохранить счет</button>
-    </form>
-  </div>
-
-  <div class="table-card">
-    <table>
-      <thead><tr><th>Номер</th><th>Сумма</th><th>Срок оплаты</th><th>Статус</th><th>ID дела</th></tr></thead>
-      <tbody>
-      {% for item in invoices %}
-        <tr>
-          <td>{{ item.number }}</td>
-          <td>{{ item.amount }}</td>
-          <td>{{ item.due_date.strftime('%d.%m.%Y') }}</td>
-          <td>{{ item.status }}</td>
-          <td>{{ item.legal_case_id }}</td>
-        </tr>
-      {% else %}
-        <tr><td colspan="5">Счета пока не созданы.</td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
+          </tbody>
+        </table>
+      </div>
+    </div>
   </div>
 </section>
 {% endblock %}

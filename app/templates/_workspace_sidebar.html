@@ -1,0 +1,26 @@
+{% set path = request.url.path if request is defined else '' %}
+<nav class="workspace-nav" aria-label="Разделы рабочего кабинета">
+  <a href="/app" class="workspace-nav__link{% if path == '/app' %} is-active{% endif %}">Главная</a>
+
+  {% if user and user.role.value == 'ADMIN' %}
+    <a href="/clients" class="workspace-nav__link{% if path == '/clients' %} is-active{% endif %}">Клиенты</a>
+    <a href="/cases" class="workspace-nav__link{% if path == '/cases' or path.startswith('/cases/') %} is-active{% endif %}">Дела</a>
+    <a href="/tasks" class="workspace-nav__link{% if path == '/tasks' %} is-active{% endif %}">Задачи</a>
+    <a href="/calendar" class="workspace-nav__link{% if path == '/calendar' %} is-active{% endif %}">Календарь</a>
+    <a href="/kanban" class="workspace-nav__link{% if path == '/kanban' %} is-active{% endif %}">Канбан</a>
+    <a href="/notifications" class="workspace-nav__link{% if path == '/notifications' %} is-active{% endif %}">Уведомления</a>
+    <a href="/invoices" class="workspace-nav__link{% if path == '/invoices' %} is-active{% endif %}">Счета</a>
+    <a href="/audit" class="workspace-nav__link{% if path == '/audit' %} is-active{% endif %}">Журнал</a>
+  {% elif user and user.role.value == 'LAWYER' %}
+    <a href="/clients" class="workspace-nav__link{% if path == '/clients' %} is-active{% endif %}">Мои клиенты</a>
+    <a href="/cases" class="workspace-nav__link{% if path == '/cases' or path.startswith('/cases/') %} is-active{% endif %}">Мои дела</a>
+    <a href="/tasks" class="workspace-nav__link{% if path == '/tasks' %} is-active{% endif %}">Мои задачи</a>
+    <a href="/calendar" class="workspace-nav__link{% if path == '/calendar' %} is-active{% endif %}">Календарь</a>
+    <a href="/kanban" class="workspace-nav__link{% if path == '/kanban' %} is-active{% endif %}">Канбан</a>
+    <a href="/notifications" class="workspace-nav__link{% if path == '/notifications' %} is-active{% endif %}">Уведомления</a>
+  {% elif user and user.role.value == 'CLIENT' %}
+    <a href="/cases" class="workspace-nav__link{% if path == '/cases' or path.startswith('/cases/') %} is-active{% endif %}">Мои обращения</a>
+    <a href="/portal/intake" class="workspace-nav__link{% if path.startswith('/portal/intake') %} is-active{% endif %}">Новая заявка</a>
+    <a href="/notifications" class="workspace-nav__link{% if path == '/notifications' %} is-active{% endif %}">Уведомления</a>
+  {% endif %}
+</nav>

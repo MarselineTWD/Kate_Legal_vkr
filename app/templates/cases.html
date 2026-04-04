@@ -1,89 +1,134 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 {% block title %}Дела{% endblock %}
 {% block content %}
 <section class="container page">
-  <h1>Юридические дела</h1>
+  <div class="workspace-layout">
+    <aside class="workspace-sidebar" aria-label="Разделы рабочего кабинета">
+      <p class="workspace-sidebar__title">Разделы</p>
+      {% include "_workspace_sidebar.html" %}
+    </aside>
+    <div class="workspace-content">
+      <h1>{% if is_client_view %}Мои обращения и дела{% elif user.role.value == 'ADMIN' %}Юридические дела{% else %}Мои дела{% endif %}</h1>
 
-  {% if created %}<p class="success">Дело успешно создано.</p>{% endif %}
+      {% if created %}<p class="success">Дело успешно создано.</p>{% endif %}
 
-  <div class="table-card form-card">
-    <h2>Создать дело</h2>
-    <form method="post" action="/cases/new" class="inline-form grid-3">
-      <label>Номер дела
-        <input type="text" name="case_number" value="{{ generated_case_number }}" />
-      </label>
-      <label>Название
-        <input type="text" name="title" required />
-      </label>
-      <label>Категория
-        <input type="text" name="category" placeholder="Например: договоры" required />
-      </label>
-      <label>Клиент
-        <select name="client_id" required>
-          {% for client in clients %}
-          <option value="{{ client.id }}">{{ client.name }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label>Ответственный юрист
-        <select name="responsible_lawyer_id">
-          <option value="">Не назначен</option>
-          {% for lawyer in lawyers %}
-          <option value="{{ lawyer.id }}">{{ lawyer.full_name or lawyer.username }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label>Дедлайн
-        <input type="date" name="deadline" />
-      </label>
-      <label>Стадия
-        <select name="stage">
-          {% for stage in stages %}
-          <option value="{{ stage.value }}">{{ stage_labels[stage] }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label>Приоритет
-        <select name="priority">
-          <option value="LOW">Низкий</option>
-          <option value="MEDIUM" selected>Средний</option>
-          <option value="HIGH">Высокий</option>
-        </select>
-      </label>
-      <label class="span-3">Описание
-        <textarea name="description" rows="3"></textarea>
-      </label>
-      <button type="submit" class="auth-action">Сохранить дело</button>
-    </form>
-  </div>
-
-  <div class="table-card">
-    <table>
-      <thead><tr><th>Номер</th><th>Название</th><th>Клиент</th><th>Стадия</th><th>TOPSIS</th><th>Изменить стадию</th></tr></thead>
-      <tbody>
-      {% for item in cases %}
-      <tr>
-        <td>{{ item.case_number }}</td>
-        <td>{{ item.title }}</td>
-        <td>{{ item.client.name if item.client else '-' }}</td>
-        <td>{{ stage_labels[item.stage] }}</td>
-        <td><a href="/cases/{{ item.id }}/topsis">Рекомендация</a></td>
-        <td>
-          <form method="post" action="/cases/{{ item.id }}/stage" class="compact-form">
-            <select name="stage">
-              {% for stage in stages %}
-              <option value="{{ stage.value }}" {% if stage == item.stage %}selected{% endif %}>{{ stage_labels[stage] }}</option>
+      {% if can_create_case %}
+      <div class="table-card form-card">
+        <h2>Создать дело</h2>
+        <form method="post" action="/cases/new" class="inline-form grid-3">
+          <label>Номер дела
+            <input type="text" name="case_number" value="{{ generated_case_number }}" />
+          </label>
+          <label>Название
+            <input type="text" name="title" required />
+          </label>
+          <label>Категория
+            <input type="text" name="category" placeholder="Например: договоры" required />
+          </label>
+          <label>Клиент
+            <select name="client_id" required>
+              {% for client in clients %}
+              <option value="{{ client.id }}">{{ client.name }}</option>
               {% endfor %}
             </select>
-            <button type="submit">Обновить</button>
-          </form>
-        </td>
-      </tr>
-      {% else %}
-      <tr><td colspan="6">Дел пока нет.</td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
+          </label>
+          <label>Ответственный юрист
+            <select name="responsible_lawyer_id">
+              <option value="">Не назначен</option>
+              {% for lawyer in lawyers %}
+              <option value="{{ lawyer.id }}">{{ lawyer.full_name or lawyer.username }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>Дедлайн
+            <input type="date" name="deadline" />
+          </label>
+          <label>Стадия
+            <select name="stage">
+              {% for stage in stages %}
+              <option value="{{ stage.value }}">{{ stage_labels[stage] }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>Приоритет
+            <select name="priority">
+              <option value="LOW">Низкий</option>
+              <option value="MEDIUM" selected>Средний</option>
+              <option value="HIGH">Высокий</option>
+            </select>
+          </label>
+          <label class="span-3">Описание
+            <textarea name="description" rows="3"></textarea>
+          </label>
+          <button type="submit" class="auth-action">Сохранить дело</button>
+        </form>
+      </div>
+      {% endif %}
+
+      <div class="table-card">
+        <table>
+          <thead>
+            <tr>
+              <th>Номер</th>
+              <th>Название</th>
+              <th>Клиент</th>
+              <th>Стадия</th>
+              <th>Ответственный</th>
+              <th>Карточка</th>
+              {% if can_view_topsis %}<th>TOPSIS</th>{% endif %}
+              {% if can_assign_lawyer %}<th>Назначение</th>{% endif %}
+              {% if can_change_stage %}<th>Изменить стадию</th>{% endif %}
+            </tr>
+          </thead>
+          <tbody>
+          {% for item in cases %}
+          <tr>
+            <td><a href="/cases/{{ item.id }}">{{ item.case_number }}</a></td>
+            <td><a href="/cases/{{ item.id }}">{{ item.title }}</a></td>
+            <td>{{ item.client.name if item.client else (client_profile.name if client_profile else '-') }}</td>
+            <td>{{ stage_labels[item.stage] }}</td>
+            <td>{{ item.responsible_lawyer.full_name if item.responsible_lawyer else 'Не назначен' }}</td>
+            <td><a href="/cases/{{ item.id }}/communication">Чат и документы</a></td>
+            {% if can_view_topsis %}
+            <td><a href="/cases/{{ item.id }}/topsis">Рекомендация</a></td>
+            {% endif %}
+            {% if can_assign_lawyer %}
+            <td>
+              <form method="post" action="/cases/{{ item.id }}/assign" class="compact-form">
+                <select name="responsible_lawyer_id">
+                  {% for lawyer in lawyers %}
+                  <option value="{{ lawyer.id }}" {% if item.responsible_lawyer_id == lawyer.id %}selected{% endif %}>{{ lawyer.full_name or lawyer.username }}</option>
+                  {% endfor %}
+                </select>
+                <button type="submit">Назначить</button>
+              </form>
+            </td>
+            {% endif %}
+            {% if can_change_stage %}
+            <td>
+              <form method="post" action="/cases/{{ item.id }}/stage" class="compact-form">
+                <input type="hidden" name="next_url" value="/cases" />
+                <select name="stage">
+                  {% for stage in stages %}
+                  <option value="{{ stage.value }}" {% if stage == item.stage %}selected{% endif %}>{{ stage_labels[stage] }}</option>
+                  {% endfor %}
+                </select>
+                <button type="submit">Обновить</button>
+              </form>
+            </td>
+            {% endif %}
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="{% if can_view_topsis and can_assign_lawyer and can_change_stage %}9{% elif can_view_topsis or can_assign_lawyer or can_change_stage %}8{% else %}6{% endif %}">
+              Дел пока нет.
+            </td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
   </div>
 </section>
 {% endblock %}

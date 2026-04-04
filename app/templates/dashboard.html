@@ -1,51 +1,55 @@
-﻿{% extends "base.html" %}
-{% block title %}Кабинет{% endblock %}
+{% extends "base.html" %}
+{% block title %}Рабочий кабинет{% endblock %}
 {% block content %}
 <section class="container page">
-  <h1>Рабочий кабинет</h1>
-  <div class="quick-links">
-    <a href="/clients" class="btn btn-main">Клиенты</a>
-    <a href="/cases" class="btn btn-main">Дела</a>
-    <a href="/tasks" class="btn btn-main">Задачи</a>
-    <a href="/calendar" class="btn btn-main">Календарь</a>
-    <a href="/kanban" class="btn btn-main">Канбан</a>
-    <a href="/portal/intake" class="btn btn-main">Новая заявка</a>
-  </div>
+  <div class="workspace-layout">
+    <aside class="workspace-sidebar" aria-label="Разделы рабочего кабинета">
+      <p class="workspace-sidebar__title">Разделы</p>
+      {% include "_workspace_sidebar.html" %}
+    </aside>
 
-  <div class="kpis">
-    <article><span>Всего дел</span><strong>{{ cases_count }}</strong></article>
-    <article><span>Активные дела</span><strong>{{ active_cases }}</strong></article>
-    <article><span>Клиенты</span><strong>{{ clients_count }}</strong></article>
-    <article><span>Активные задачи</span><strong>{{ tasks_todo }}</strong></article>
-    <article><span>Просрочки</span><strong>{{ overdue_tasks }}</strong></article>
-  </div>
+    <div class="workspace-content">
+      <div class="workspace-head">
+        <p class="workspace-label">Рабочий кабинет</p>
+        <h1>{% if user.role.value == 'ADMIN' %}Панель администратора{% else %}Панель юриста{% endif %}</h1>
+      </div>
 
-  <div class="table-card">
-    <h2>Ближайшие задачи</h2>
-    <table>
-      <thead><tr><th>Задача</th><th>Срок</th><th>Статус</th></tr></thead>
-      <tbody>
-      {% for t in recent_tasks %}
-        <tr><td>{{ t.title }}</td><td>{{ t.due_date.strftime('%d.%m.%Y') }}</td><td>{{ status_labels[t.status] }}</td></tr>
-      {% else %}
-        <tr><td colspan="3">Задач пока нет. Создайте первую задачу в модуле «Задачи».</td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </div>
+      <div class="kpis">
+        <article><span>Доступные дела</span><strong>{{ cases_count }}</strong></article>
+        <article><span>Активные дела</span><strong>{{ active_cases }}</strong></article>
+        <article><span>Клиенты</span><strong>{{ clients_count }}</strong></article>
+        <article><span>Активные задачи</span><strong>{{ tasks_todo }}</strong></article>
+        <article><span>Просроченные задачи</span><strong>{{ overdue_tasks }}</strong></article>
+      </div>
 
-  <div class="table-card">
-    <h2>Последние уведомления</h2>
-    <table>
-      <thead><tr><th>Событие</th><th>Описание</th></tr></thead>
-      <tbody>
-      {% for item in last_notifications %}
-        <tr><td>{{ item.title }}</td><td>{{ item.message }}</td></tr>
-      {% else %}
-        <tr><td colspan="2">Пока нет уведомлений.</td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
+      <div class="table-card">
+        <h2>Ближайшие задачи</h2>
+        <table>
+          <thead><tr><th>Задача</th><th>Срок</th><th>Статус</th></tr></thead>
+          <tbody>
+          {% for t in recent_tasks %}
+            <tr><td>{{ t.title }}</td><td>{{ t.due_date.strftime('%d.%m.%Y') }}</td><td>{{ status_labels[t.status] }}</td></tr>
+          {% else %}
+            <tr><td colspan="3">Задач пока нет.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="table-card">
+        <h2>Последние уведомления</h2>
+        <table>
+          <thead><tr><th>Событие</th><th>Описание</th></tr></thead>
+          <tbody>
+          {% for item in last_notifications %}
+            <tr><td>{{ item.title }}</td><td>{{ item.message }}</td></tr>
+          {% else %}
+            <tr><td colspan="2">Пока нет уведомлений.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
   </div>
 </section>
 {% endblock %}
