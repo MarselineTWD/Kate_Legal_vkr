@@ -1,8 +1,28 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 {% block title %}Календарь дедлайнов{% endblock %}
 {% block content %}
-<section class="container page">
+<section class="page">
   <h1>Календарь дедлайнов</h1>
+  {% if selected_lawyer %}
+  <p class="subtitle">Показаны задачи юриста: {{ selected_lawyer.full_name or selected_lawyer.username }}</p>
+  {% else %}
+  <p class="subtitle">Показаны все задачи без привязки к конкретному юристу.</p>
+  {% endif %}
+
+  {% if user.role.value == "ADMIN" and lawyers %}
+  <form method="get" action="/calendar" class="table-card calendar-filter">
+    <label>Юрист
+      <select name="lawyer_id" onchange="this.form.submit()">
+        {% for lawyer in lawyers %}
+        <option value="{{ lawyer.id }}" {% if selected_lawyer and lawyer.id == selected_lawyer.id %}selected{% endif %}>
+          {{ lawyer.full_name or lawyer.username }}
+        </option>
+        {% endfor %}
+      </select>
+    </label>
+  </form>
+  {% endif %}
+
   <div id="calendar-grid" class="calendar-grid"></div>
 </section>
 {% endblock %}

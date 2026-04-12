@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
@@ -8,6 +8,7 @@
   {% block head %}{% endblock %}
 </head>
 <body class="{% if user %}cabinet-page{% endif %} {% block body_class %}{% endblock %}">
+  {% set current_path = request.url.path %}
   <header class="header site-header">
     <div class="container header-inner">
       <a href="{% if user %}/app{% else %}/{% endif %}" class="brand">
@@ -16,28 +17,42 @@
       </a>
       <nav class="nav">
         {% if user %}
-          <a href="/app">Кабинет</a>
-          <a href="/clients">Клиенты</a>
-          <a href="/cases">Дела</a>
-          <a href="/tasks">Задачи</a>
-          <a href="/calendar">Календарь</a>
-          <a href="/kanban">Канбан</a>
-          <a href="/notifications">Уведомления</a>
-          <a href="/invoices">Счета</a>
-          <a href="/audit">Журнал</a>
-          <a href="/portal/intake">Заявка</a>
-          <a href="/logout">Выйти</a>
+          <a href="/" class="nav-link{% if current_path == '/' %} is-active{% endif %}">Главная</a>
+          <a href="/logout" class="nav-link">Выйти</a>
         {% else %}
-          <a href="/">Главная</a>
-          <a href="/#contacts">Контакты</a>
-          <a href="/portal/intake">Оставить заявку</a>
-          <a href="/login">Войти</a>
+          <a href="/" class="nav-link-text{% if current_path == '/' %} is-active{% endif %}">Главная</a>
+          <a href="/#contacts" class="nav-link-text">Контакты</a>
+          <a href="/login" class="nav-link{% if current_path == '/login' %} is-active{% endif %}">Войти</a>
         {% endif %}
       </nav>
     </div>
   </header>
 
-  {% block content %}{% endblock %}
+  {% if user %}
+  <div class="container app-shell">
+    <aside class="app-sidebar">
+      <nav class="app-sidebar__nav" aria-label="Навигация кабинета">
+        <a href="/app" class="{% if current_path == '/app' %}is-active{% endif %}">Кабинет</a>
+        <a href="/clients" class="{% if current_path.startswith('/clients') %}is-active{% endif %}">Клиенты</a>
+        <a href="/cases" class="{% if current_path.startswith('/cases') %}is-active{% endif %}">Дела</a>
+        <a href="/tasks" class="{% if current_path.startswith('/tasks') %}is-active{% endif %}">Задачи</a>
+        <a href="/calendar" class="{% if current_path.startswith('/calendar') %}is-active{% endif %}">Календарь</a>
+        <a href="/kanban" class="{% if current_path.startswith('/kanban') %}is-active{% endif %}">Канбан</a>
+        <a href="/notifications" class="{% if current_path.startswith('/notifications') %}is-active{% endif %}">Уведомления</a>
+        <a href="/invoices" class="{% if current_path.startswith('/invoices') %}is-active{% endif %}">Счета</a>
+        <a href="/audit" class="{% if current_path.startswith('/audit') %}is-active{% endif %}">Журнал</a>
+        <a href="/portal/intake" class="{% if current_path.startswith('/portal/intake') %}is-active{% endif %}">Заявка</a>
+      </nav>
+    </aside>
+    <main class="app-main">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+  {% else %}
+    <main>
+      {% block body_content %}{{ self.content() }}{% endblock %}
+    </main>
+  {% endif %}
 
   {% if (show_footer is not defined or show_footer) and not user %}
   <footer class="footer" id="contacts">

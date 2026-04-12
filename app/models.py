@@ -112,6 +112,17 @@ class CaseTask(Base):
     assignee: Mapped[User | None] = relationship(foreign_keys=[assignee_id])
 
 
+class CaseComment(Base):
+    __tablename__ = "case_comments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    legal_case_id: Mapped[int] = mapped_column(ForeignKey("legal_cases.id"))
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    message: Mapped[str] = mapped_column(Text)
+    is_internal: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class CalendarEvent(Base):
     __tablename__ = "calendar_events"
 

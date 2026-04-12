@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
@@ -17,6 +17,7 @@ from .config import settings
 from .database import get_db
 from .models import (
     AuditLog,
+    CaseComment,
     CaseStage,
     CaseTask,
     Client,
@@ -124,6 +125,165 @@ def next_case_number(db: Session) -> str:
     year = datetime.now().year
     count = db.scalar(select(func.count(LegalCase.id))) or 0
     return f"CASE-{year}-{count + 1:03d}"
+
+
+def infer_case_category(title: str, description: str, fallback: str) -> str:
+    text = f"{title} {description}".lower()
+    rules = [
+        ("труд", "Трудовое право"),
+        ("договор", "Договорная работа"),
+        ("корпоратив", "Корпоративное право"),
+        ("суд", "Судебное производство"),
+        ("задолж", "Взыскание задолженности"),
+        ("претенз", "Претензионная работа"),
+    ]
+    for keyword, label in rules:
+        if keyword in text:
+            return label
+    return fallback or "Общая категория"
+
+
+def build_case_workspace(db: Session, legal_case: LegalCase) -> dict:
+    tasks = db.scalars(
+        select(CaseTask).where(CaseTask.legal_case_id == legal_case.id).order_by(CaseTask.due_date, CaseTask.id)
+    ).all()
+    comments = db.scalars(
+        select(CaseComment).where(CaseComment.legal_case_id == legal_case.id).order_by(CaseComment.created_at, CaseComment.id)
+    ).all()
+    users_map = {item.id: item for item in db.scalars(select(User)).all()}
+    today = date.today()
+
+    overdue_tasks = [task for task in tasks if task.due_date < today and task.status != TaskStatus.DONE]
+    active_tasks = [task for task in tasks if task.status != TaskStatus.DONE]
+    deadline_days = None
+    if legal_case.deadline:
+        deadline_days = (legal_case.deadline - today).days
+
+    risk_items = []
+    risk_score = 0
+
+    if legal_case.stage != CaseStage.COMPLETED:
+        if legal_case.responsible_lawyer_id is None:
+            risk_items.append(("high", "Не назначен ответственный юрист"))
+            risk_score += 3
+        if legal_case.deadline is None:
+            risk_items.append(("medium", "У дела нет установленного дедлайна"))
+            risk_score += 2
+        elif deadline_days is not None and deadline_days < 0:
+            risk_items.append(("high", "Дедлайн уже просрочен"))
+            risk_score += 4
+        elif deadline_days is not None and deadline_days <= 3:
+            risk_items.append(("high", "До дедлайна осталось 1-3 дня"))
+            risk_score += 3
+        elif deadline_days is not None and deadline_days <= 7:
+            risk_items.append(("medium", "До дедлайна осталось меньше недели"))
+            risk_score += 2
+
+    if not legal_case.description or len(legal_case.description.strip()) < 80:
+        risk_items.append(("medium", "Описание дела слишком краткое для уверенной передачи в работу"))
+        risk_score += 1
+
+    if not tasks:
+        risk_items.append(("medium", "По делу еще не создано ни одной задачи"))
+        risk_score += 2
+    elif overdue_tasks:
+        severity = "high" if len(overdue_tasks) >= 2 else "medium"
+        risk_items.append((severity, f"Есть просроченные задачи: {len(overdue_tasks)}"))
+        risk_score += 3 if severity == "high" else 2
+
+    if legal_case.responsible_lawyer and legal_case.responsible_lawyer.current_load >= 6:
+        risk_items.append(("medium", "Ответственный юрист уже сильно загружен"))
+        risk_score += 1
+
+    if risk_score >= 6:
+        risk_level = "high"
+        risk_label = "Высокий риск"
+    elif risk_score >= 3:
+        risk_level = "medium"
+        risk_label = "Средний риск"
+    else:
+        risk_level = "low"
+        risk_label = "Низкий риск"
+
+    if not risk_items:
+        risk_items.append(("low", "Критичных рисков по делу сейчас не обнаружено"))
+
+    stage_steps = {
+        CaseStage.NEW_REQUEST: [
+            "Проверить комплект входящих документов и уточнить запрос клиента",
+            "Назначить ответственного юриста и создать первичные задачи",
+        ],
+        CaseStage.DOC_ANALYSIS: [
+            "Проанализировать доказательства и выделить пробелы в материалах",
+            "Подготовить короткое резюме позиции для команды",
+        ],
+        CaseStage.DOC_PREPARATION: [
+            "Сформировать проект процессуального документа и согласовать пакет приложений",
+            "Проверить сроки направления документов второй стороне",
+        ],
+        CaseStage.COURT: [
+            "Актуализировать позицию перед заседанием и сверить календарь процессуальных сроков",
+            "Подготовить тезисы выступления и комплект судебной папки",
+        ],
+        CaseStage.COMPLETED: [
+            "Закрыть оставшиеся задачи и собрать итоговые документы в карточке дела",
+            "Подготовить итоговый комментарий для клиента и архива",
+        ],
+    }
+    next_steps = list(stage_steps.get(legal_case.stage, []))
+    if deadline_days is not None and 0 <= deadline_days <= 7:
+        next_steps.insert(0, "Поставить дело в приоритет и перепроверить ближайшие дедлайны")
+    if not active_tasks and legal_case.stage != CaseStage.COMPLETED:
+        next_steps.append("Добавить рабочие задачи, чтобы команда видела следующий шаг")
+
+    category_text = infer_case_category(legal_case.title, legal_case.description or "", legal_case.category)
+    doc_map = {
+        "Трудовое право": ["Трудовой договор", "Приказ/уведомление", "Расчет выплат"],
+        "Договорная работа": ["Договор", "Переписка сторон", "Акт/накладная"],
+        "Корпоративное право": ["Устав", "Протокол собрания", "Корпоративные решения"],
+        "Судебное производство": ["Иск/отзыв", "Доказательства", "Доверенность"],
+        "Взыскание задолженности": ["Претензия", "Расчет задолженности", "Подтверждающие платежи"],
+        "Претензионная работа": ["Претензия", "Подтверждение отправки", "Расчет требований"],
+    }
+    recommended_docs = doc_map.get(category_text, ["Описание ситуации", "Подтверждающие документы", "Контактные данные клиента"])
+
+    ai_summary = (
+        f"Дело находится на стадии «{STAGE_LABELS[legal_case.stage]}». "
+        f"Основной фокус сейчас: {next_steps[0].lower() if next_steps else 'поддерживать движение по задачам'}."
+    )
+
+    comments_payload = []
+    for comment in comments:
+        author = users_map.get(comment.user_id)
+        comments_payload.append(
+            {
+                "id": comment.id,
+                "author": (author.full_name or author.username) if author else "Система",
+                "message": comment.message,
+                "is_internal": comment.is_internal,
+                "created_at": comment.created_at.strftime("%d.%m.%Y %H:%M"),
+            }
+        )
+
+    return {
+        "risk": {
+            "level": risk_level,
+            "label": risk_label,
+            "items": [{"level": level, "text": text} for level, text in risk_items],
+        },
+        "ai": {
+            "summary": ai_summary,
+            "predicted_category": category_text,
+            "next_steps": next_steps[:4],
+            "recommended_documents": recommended_docs[:4],
+            "signals": [
+                f"Активных задач: {len(active_tasks)}",
+                f"Просроченных задач: {len(overdue_tasks)}",
+                f"Комментариев в обсуждении: {len(comments_payload)}",
+            ],
+        },
+        "comments": comments_payload,
+    }
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -468,7 +628,84 @@ def update_case_stage(
     db.add(Notification(recipient_id=user.id, title="Стадия дела изменена", message=legal_case.case_number))
     log_action(db, user, "Обновлена стадия дела", f"{legal_case.case_number} -> {legal_case.stage.value}")
     db.commit()
+    if request.headers.get("x-requested-with") == "XMLHttpRequest":
+        return JSONResponse({"ok": True, "label": STAGE_LABELS[legal_case.stage]})
     return RedirectResponse("/cases", status_code=303)
+
+
+@app.post("/cases/{case_id}/edit")
+def update_case_details(
+    case_id: int,
+    request: Request,
+    title: str = Form(...),
+    category: str = Form(...),
+    description: str = Form(""),
+    deadline: str = Form(""),
+    priority: str = Form("MEDIUM"),
+    responsible_lawyer_id: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    user = require_auth(request, db)
+    legal_case = db.get(LegalCase, case_id)
+    if not legal_case:
+        raise HTTPException(status_code=404, detail="Дело не найдено")
+
+    lawyer_id_value = None
+    raw_lawyer_id = (responsible_lawyer_id or "").strip()
+    if raw_lawyer_id:
+        try:
+            lawyer_id_value = int(raw_lawyer_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Некорректный юрист") from exc
+
+    deadline_value = parse_iso_date(deadline) if deadline else None
+    legal_case.title = title.strip()
+    legal_case.category = category.strip()
+    legal_case.description = description.strip()
+    legal_case.deadline = deadline_value
+    legal_case.priority = priority.strip().upper() or "MEDIUM"
+    legal_case.responsible_lawyer_id = lawyer_id_value
+
+    if lawyer_id_value:
+        lawyer = db.get(User, lawyer_id_value)
+        if lawyer and lawyer not in legal_case.lawyers:
+            legal_case.lawyers.append(lawyer)
+
+    db.add(
+        Notification(
+            recipient_id=user.id,
+            title="Карточка дела обновлена",
+            message=f"{legal_case.case_number}: {legal_case.title}",
+        )
+    )
+    log_action(db, user, "Обновлена карточка дела", f"{legal_case.case_number}: {legal_case.title}")
+    db.commit()
+
+    if request.headers.get("x-requested-with") == "XMLHttpRequest":
+        assignee = legal_case.responsible_lawyer
+        return JSONResponse(
+            {
+                "ok": True,
+                "case": {
+                    "id": legal_case.id,
+                    "title": legal_case.title,
+                    "category": legal_case.category,
+                    "description": legal_case.description,
+                    "priority": legal_case.priority,
+                    "priority_label": {"LOW": "Низкий", "MEDIUM": "Средний", "HIGH": "Высокий"}.get(
+                        legal_case.priority,
+                        legal_case.priority,
+                    ),
+                    "deadline": legal_case.deadline.strftime("%d.%m.%Y") if legal_case.deadline else "Без дедлайна",
+                    "deadline_input": legal_case.deadline.isoformat() if legal_case.deadline else "",
+                    "responsible_lawyer_id": legal_case.responsible_lawyer_id or "",
+                    "responsible_lawyer_name": (
+                        (assignee.full_name or assignee.username) if assignee else "Не назначен"
+                    ),
+                },
+            }
+        )
+    return RedirectResponse("/kanban", status_code=303)
 
 
 @app.get("/tasks", response_class=HTMLResponse)
@@ -567,13 +804,26 @@ def update_task_status(
     )
     log_action(db, user, "Обновлен статус задачи", f"{task.title} -> {task.status.value}")
     db.commit()
+    if request.headers.get("x-requested-with") == "XMLHttpRequest":
+        return JSONResponse({"ok": True, "label": STATUS_LABELS[task.status]})
     return RedirectResponse("/tasks", status_code=303)
 
 
 @app.get("/calendar", response_class=HTMLResponse)
-def calendar_page(request: Request, db: Session = Depends(get_db)):
+def calendar_page(request: Request, lawyer_id: int | None = None, db: Session = Depends(get_db)):
     user = require_auth(request, db)
-    tasks = db.scalars(select(CaseTask).order_by(CaseTask.due_date)).all()
+    lawyers = db.scalars(select(User).where(User.role == Role.LAWYER).order_by(User.full_name, User.username)).all()
+    selected_lawyer = None
+
+    if user.role == Role.LAWYER:
+        selected_lawyer = user
+    elif lawyers:
+        selected_lawyer = next((item for item in lawyers if item.id == lawyer_id), lawyers[0])
+
+    stmt = select(CaseTask).order_by(CaseTask.due_date, CaseTask.id)
+    if selected_lawyer:
+        stmt = stmt.where(CaseTask.assignee_id == selected_lawyer.id)
+    tasks = db.scalars(stmt).all()
     events = []
     for task in tasks:
         events.append(
@@ -584,19 +834,84 @@ def calendar_page(request: Request, db: Session = Depends(get_db)):
                 "is_done": task.status == TaskStatus.DONE,
             }
         )
-    return templates.TemplateResponse("calendar.html", {"request": request, "events": events, "user": user})
+    return templates.TemplateResponse(
+        "calendar.html",
+        {
+            "request": request,
+            "events": events,
+            "lawyers": lawyers,
+            "selected_lawyer": selected_lawyer,
+            "user": user,
+        },
+    )
+
+
+@app.get("/cases/{case_id}/workspace")
+def case_workspace(case_id: int, request: Request, db: Session = Depends(get_db)):
+    _ = require_auth(request, db)
+    legal_case = db.get(LegalCase, case_id)
+    if not legal_case:
+        raise HTTPException(status_code=404, detail="Дело не найдено")
+    return JSONResponse(build_case_workspace(db, legal_case))
+
+
+@app.post("/cases/{case_id}/comments")
+def add_case_comment(
+    case_id: int,
+    request: Request,
+    message: str = Form(...),
+    is_internal: str = Form("true"),
+    db: Session = Depends(get_db),
+):
+    user = require_auth(request, db)
+    legal_case = db.get(LegalCase, case_id)
+    if not legal_case:
+        raise HTTPException(status_code=404, detail="Дело не найдено")
+
+    text = message.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Комментарий не может быть пустым")
+
+    comment = CaseComment(
+        legal_case_id=legal_case.id,
+        user_id=user.id,
+        message=text,
+        is_internal=is_internal.strip().lower() != "false",
+    )
+    db.add(comment)
+    db.add(
+        Notification(
+            recipient_id=user.id,
+            title="Новый комментарий по делу",
+            message=f"{legal_case.case_number}: {legal_case.title}",
+        )
+    )
+    log_action(db, user, "Добавлен комментарий по делу", f"{legal_case.case_number}: {text[:80]}")
+    db.commit()
+
+    if request.headers.get("x-requested-with") == "XMLHttpRequest":
+        return JSONResponse(build_case_workspace(db, legal_case))
+    return RedirectResponse("/kanban", status_code=303)
 
 
 @app.get("/kanban", response_class=HTMLResponse)
 def kanban_page(request: Request, db: Session = Depends(get_db)):
     user = require_auth(request, db)
-    cases = db.scalars(select(LegalCase)).all()
+    cases = db.scalars(select(LegalCase).order_by(LegalCase.opened_at.desc(), LegalCase.id.desc())).all()
+    lawyers = db.scalars(select(User).where(User.role == Role.LAWYER).order_by(User.full_name, User.username)).all()
     grouped = defaultdict(list)
     for legal_case in cases:
         grouped[legal_case.stage].append(legal_case)
     return templates.TemplateResponse(
         "kanban.html",
-        {"request": request, "grouped": grouped, "stages": list(CaseStage), "stage_labels": STAGE_LABELS, "user": user},
+        {
+            "request": request,
+            "grouped": grouped,
+            "stages": list(CaseStage),
+            "stage_labels": STAGE_LABELS,
+            "lawyers": lawyers,
+            "user": user,
+        },
     )
 
 

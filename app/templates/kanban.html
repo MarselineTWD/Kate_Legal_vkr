@@ -1,24 +1,62 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 {% block title %}Канбан{% endblock %}
 {% block content %}
-<section class="container page">
+<section class="page">
   <h1>Канбан доска</h1>
-  <div class="kanban">
+  <p class="subtitle">Общая доска по всем делам. Перетаскивайте карточки между стадиями, чтобы сразу обновить статус дела, или откройте карточку для просмотра и редактирования.</p>
+  <div class="kanban" data-kanban-board>
     {% for st in stages %}
-      <div class="column">
-        <h3>{{ stage_labels[st] }}</h3>
+      <div class="column" data-stage-column data-stage-value="{{ st.value }}">
+        <div class="kanban-column__header">
+          <h3>{{ stage_labels[st] }}</h3>
+          <span class="kanban-column__count">{{ grouped[st] | length }}</span>
+        </div>
         {% for c in grouped[st] %}
-        <article class="card">
-          <strong>{{ c.case_number }}</strong>
-          <p>{{ c.title }}</p>
-          <small>{{ c.client.name if c.client else '-' }}</small>
-          <form method="post" action="/cases/{{ c.id }}/stage" class="compact-form compact-form-column">
-            <select name="stage">
-              {% for stage in stages %}
-              <option value="{{ stage.value }}" {% if stage == c.stage %}selected{% endif %}>{{ stage_labels[stage] }}</option>
-              {% endfor %}
-            </select>
-            <button type="submit">Перевести</button>
+        {% set priority_key = (c.priority or "MEDIUM") %}
+        {% set priority_label = {"LOW": "Низкий", "MEDIUM": "Средний", "HIGH": "Высокий"}.get(priority_key, priority_key) %}
+        <article
+          class="card case-card"
+          draggable="true"
+          data-case-card
+          data-case-id="{{ c.id }}"
+          data-current-stage="{{ c.stage.value }}"
+          data-case-number="{{ c.case_number }}"
+          data-case-title="{{ c.title }}"
+          data-case-client="{{ c.client.name if c.client else 'Клиент не указан' }}"
+          data-case-opened-at="{{ c.opened_at.strftime('%d.%m.%Y') if c.opened_at else '-' }}"
+          data-case-deadline="{{ c.deadline.strftime('%d.%m.%Y') if c.deadline else 'Без дедлайна' }}"
+          data-case-deadline-input="{{ c.deadline.isoformat() if c.deadline else '' }}"
+          data-case-priority="{{ priority_key }}"
+          data-case-priority-label="{{ priority_label }}"
+          data-case-category="{{ c.category }}"
+          data-case-description="{{ c.description }}"
+          data-case-lawyer-id="{{ c.responsible_lawyer_id or '' }}"
+          data-case-lawyer-name="{{ c.responsible_lawyer.full_name or c.responsible_lawyer.username if c.responsible_lawyer else 'Не назначен' }}"
+        >
+          <div class="case-card__header">
+            <strong class="case-card__number">{{ c.case_number }}</strong>
+            <span class="case-chip case-chip--{{ priority_key|lower }}" data-case-priority-chip>{{ priority_label }}</span>
+          </div>
+          <p class="case-card__title" data-case-title-text>{{ c.title }}</p>
+          <div class="case-card__client" data-case-client-text>{{ c.client.name if c.client else "Клиент не указан" }}</div>
+          <p class="case-card__description" data-case-description-text>{{ c.description }}</p>
+          <dl class="case-card__meta">
+            <div class="case-card__meta-row">
+              <dt>Открыто</dt>
+              <dd data-case-opened-at-text>{{ c.opened_at.strftime('%d.%m.%Y') if c.opened_at else "-" }}</dd>
+            </div>
+            <div class="case-card__meta-row">
+              <dt>Назначен</dt>
+              <dd data-case-lawyer-text>{{ c.responsible_lawyer.full_name or c.responsible_lawyer.username if c.responsible_lawyer else "Не назначен" }}</dd>
+            </div>
+            <div class="case-card__meta-row">
+              <dt>Дедлайн</dt>
+              <dd data-case-deadline-text>{{ c.deadline.strftime('%d.%m.%Y') if c.deadline else "Без дедлайна" }}</dd>
+            </div>
+          </dl>
+          <button type="button" class="case-card__open" data-case-open>Открыть карточку</button>
+          <form method="post" action="/cases/{{ c.id }}/stage" class="visually-hidden js-kanban-stage-form" aria-hidden="true">
+            <input type="hidden" name="stage" value="{{ c.stage.value }}" />
           </form>
         </article>
         {% else %}
@@ -28,4 +66,120 @@
     {% endfor %}
   </div>
 </section>
+
+<div class="modal" id="case-modal" hidden>
+  <div class="modal__backdrop" data-case-modal-close></div>
+  <div class="modal__dialog modal__dialog--wide" role="dialog" aria-modal="true" aria-labelledby="case-modal-title">
+    <div class="modal__header">
+      <div>
+        <div class="modal__eyebrow" id="case-modal-number">Дело</div>
+        <h2 id="case-modal-title">Карточка дела</h2>
+      </div>
+      <button type="button" class="modal__close" data-case-modal-close aria-label="Закрыть">x</button>
+    </div>
+
+    <div class="modal__body">
+      <form class="modal__form" id="case-modal-form">
+        <div class="modal__summary">
+          <span class="case-chip case-chip--medium" id="case-modal-priority-chip">Средний</span>
+          <span class="modal__stage" id="case-modal-stage"></span>
+          <span class="modal__info" id="case-modal-client"></span>
+          <span class="modal__info">Открыто: <strong id="case-modal-opened-at"></strong></span>
+        </div>
+        <label>Название
+          <input type="text" name="title" required />
+        </label>
+        <label>Категория
+          <input type="text" name="category" required />
+        </label>
+        <div class="modal__grid">
+          <label>Ответственный юрист
+            <select name="responsible_lawyer_id">
+              <option value="">Не назначен</option>
+              {% for lawyer in lawyers %}
+              <option value="{{ lawyer.id }}">{{ lawyer.full_name or lawyer.username }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>Приоритет
+            <select name="priority">
+              <option value="LOW">Низкий</option>
+              <option value="MEDIUM">Средний</option>
+              <option value="HIGH">Высокий</option>
+            </select>
+          </label>
+          <label>Дедлайн
+            <input type="date" name="deadline" />
+          </label>
+        </div>
+        <label>Описание
+          <textarea name="description" rows="8"></textarea>
+        </label>
+        <div class="modal__actions">
+          <button type="button" class="btn btn-light" data-case-modal-close>Закрыть</button>
+          <button type="submit" class="auth-action">Сохранить изменения</button>
+        </div>
+      </form>
+
+      <aside class="modal__sidebar">
+        <section class="workspace-card">
+          <div class="workspace-card__header">
+            <h3>Анализ рисков</h3>
+            <span class="workspace-badge workspace-badge--medium" id="case-risk-badge">Загрузка...</span>
+          </div>
+          <ul class="workspace-list" id="case-risk-list">
+            <li class="workspace-list__empty">Собираем сигналы по делу...</li>
+          </ul>
+        </section>
+
+        <section class="workspace-card">
+          <div class="workspace-card__header">
+            <h3>ИИ-подсказки</h3>
+          </div>
+          <p class="workspace-summary" id="case-ai-summary">Готовим рекомендации...</p>
+          <div class="workspace-meta">
+            <span class="workspace-meta__label">Предполагаемая категория</span>
+            <strong id="case-ai-category">-</strong>
+          </div>
+          <div class="workspace-columns">
+            <div>
+              <h4>Следующие шаги</h4>
+              <ul class="workspace-list" id="case-ai-steps">
+                <li class="workspace-list__empty">Нет данных</li>
+              </ul>
+            </div>
+            <div>
+              <h4>Рекомендуемые документы</h4>
+              <ul class="workspace-list" id="case-ai-docs">
+                <li class="workspace-list__empty">Нет данных</li>
+              </ul>
+            </div>
+          </div>
+          <div class="workspace-signals" id="case-ai-signals"></div>
+        </section>
+
+        <section class="workspace-card">
+          <div class="workspace-card__header">
+            <h3>Чат и комментарии</h3>
+          </div>
+          <div class="comment-thread" id="case-comments-thread">
+            <p class="workspace-list__empty">Комментариев пока нет.</p>
+          </div>
+          <form id="case-comment-form" class="comment-form">
+            <label>Сообщение
+              <textarea name="message" rows="4" placeholder="Напишите комментарий по делу"></textarea>
+            </label>
+            <label class="comment-form__toggle">
+              <input type="checkbox" name="is_internal" value="true" checked />
+              Внутренний комментарий
+            </label>
+            <div class="modal__actions modal__actions--single">
+              <button type="submit" class="auth-action">Отправить комментарий</button>
+            </div>
+          </form>
+        </section>
+      </aside>
+    </div>
+  </div>
+</div>
 {% endblock %}

@@ -1,7 +1,7 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 {% block title %}Счета{% endblock %}
 {% block content %}
-<section class="container page">
+<section class="page">
   <h1>Счета и платежи</h1>
 
   {% if created %}<p class="success">Счет успешно создан.</p>{% endif %}
@@ -32,7 +32,9 @@
           <option value="OVERDUE">Просрочен</option>
         </select>
       </label>
-      <button type="submit" class="auth-action">Сохранить счет</button>
+      <div class="form-actions form-actions-left span-3">
+        <button type="submit" class="auth-action">Сохранить счет</button>
+      </div>
     </form>
   </div>
 

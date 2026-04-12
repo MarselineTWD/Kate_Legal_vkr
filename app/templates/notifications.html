@@ -1,12 +1,12 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 {% block title %}Уведомления{% endblock %}
 {% block content %}
-<section class="container page">
+<section class="page">
   <h1>Уведомления</h1>
   <p class="subtitle">Непрочитанных: {{ unread }}</p>
 
   <div class="table-card">
-    <table>
+    <table class="readable-table notifications-table">
       <thead><tr><th>Событие</th><th>Сообщение</th><th>Статус</th><th>Действие</th></tr></thead>
       <tbody>
       {% for item in notifications %}
@@ -14,7 +14,7 @@
           <td>{{ item.title }}</td>
           <td>{{ item.message }}</td>
           <td>{% if item.is_read %}Прочитано{% else %}Новое{% endif %}</td>
-          <td>
+          <td class="action-cell">
             {% if not item.is_read %}
               <form method="post" action="/notifications/{{ item.id }}/read" class="compact-form">
                 <button type="submit">Прочитать</button>

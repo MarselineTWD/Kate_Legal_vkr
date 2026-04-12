@@ -1,11 +1,11 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 {% block title %}Журнал действий{% endblock %}
 {% block content %}
-<section class="container page">
+<section class="page">
   <h1>Журнал действий пользователей</h1>
 
   <div class="table-card">
-    <table>
+    <table class="readable-table audit-table">
       <thead><tr><th>Дата</th><th>Пользователь</th><th>Действие</th><th>Детали</th></tr></thead>
       <tbody>
       {% for item in entries %}

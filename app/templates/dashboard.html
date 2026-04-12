@@ -1,16 +1,8 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 {% block title %}Кабинет{% endblock %}
 {% block content %}
-<section class="container page">
+<section class="page">
   <h1>Рабочий кабинет</h1>
-  <div class="quick-links">
-    <a href="/clients" class="btn btn-main">Клиенты</a>
-    <a href="/cases" class="btn btn-main">Дела</a>
-    <a href="/tasks" class="btn btn-main">Задачи</a>
-    <a href="/calendar" class="btn btn-main">Календарь</a>
-    <a href="/kanban" class="btn btn-main">Канбан</a>
-    <a href="/portal/intake" class="btn btn-main">Новая заявка</a>
-  </div>
 
   <div class="kpis">
     <article><span>Всего дел</span><strong>{{ cases_count }}</strong></article>

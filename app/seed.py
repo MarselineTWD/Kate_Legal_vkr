@@ -4,10 +4,10 @@ import os
 import secrets
 from datetime import date, datetime, timedelta
 
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 
 from .database import Base, SessionLocal, engine
-from .models import CaseStage, CaseTask, Client, LegalCase, Role, TaskStatus, User
+from .models import CaseComment, CaseStage, CaseTask, Client, LegalCase, Role, TaskStatus, User
 from .security import hash_password
 
 
@@ -56,12 +56,190 @@ def _ensure_user_registration_columns() -> None:
                 conn.execute(text(f"ALTER TABLE users ADD COLUMN {column_name} {sql_type}"))
 
 
+def _ensure_demo_board_data(db) -> None:
+    lawyers = db.scalars(select(User).where(User.role == Role.LAWYER).order_by(User.id)).all()
+    if not lawyers:
+        return
+
+    clients_by_name = {client.name: client for client in db.scalars(select(Client)).all()}
+    demo_clients = [
+        {
+            "name": "ООО Ромашка",
+            "client_type": "ORGANIZATION",
+            "email": "contact@romashka.local",
+            "phone": "+7 900 111-11-11",
+            "address": "г. Екатеринбург, ул. Ленина, 10",
+            "notes": "Приоритетный корпоративный клиент",
+        },
+        {
+            "name": "АО Вектор",
+            "client_type": "ORGANIZATION",
+            "email": "office@vector.local",
+            "phone": "+7 900 222-22-22",
+            "address": "г. Екатеринбург, ул. Малышева, 21",
+            "notes": "Корпоративный спор и сопровождение документов",
+        },
+        {
+            "name": "ИП Соколова Е.А.",
+            "client_type": "PERSON",
+            "email": "sokolova@client.local",
+            "phone": "+7 900 333-33-33",
+            "address": "г. Екатеринбург, ул. Белинского, 14",
+            "notes": "Нужна помощь по трудовому спору",
+        },
+    ]
+
+    for payload in demo_clients:
+        if payload["name"] not in clients_by_name:
+            client = Client(**payload)
+            db.add(client)
+            db.flush()
+            clients_by_name[payload["name"]] = client
+
+    lawyer_primary = lawyers[0]
+    lawyer_secondary = lawyers[1] if len(lawyers) > 1 else lawyers[0]
+    lawyer_third = lawyers[2] if len(lawyers) > 2 else lawyer_secondary
+
+    demo_cases = [
+        {
+            "case_number": "CASE-2026-001",
+            "title": "Взыскание задолженности по договору поставки",
+            "category": "договоры",
+            "description": "Подготовка претензии, искового заявления и полного пакета документов по просроченной оплате поставки.",
+            "stage": CaseStage.DOC_ANALYSIS,
+            "priority": "HIGH",
+            "opened_at": date.today(),
+            "deadline": date.today() + timedelta(days=30),
+            "client_name": "ООО Ромашка",
+            "responsible_lawyer": lawyer_primary,
+            "team": [lawyer_primary, lawyer_secondary],
+        },
+        {
+            "case_number": "CASE-2026-002",
+            "title": "Корпоративный конфликт участников общества",
+            "category": "корпоративное право",
+            "description": "Подготовка правовой позиции, анализ документов общества и сопровождение переговоров между участниками.",
+            "stage": CaseStage.NEW_REQUEST,
+            "priority": "MEDIUM",
+            "opened_at": date.today() - timedelta(days=3),
+            "deadline": date.today() + timedelta(days=14),
+            "client_name": "АО Вектор",
+            "responsible_lawyer": lawyer_secondary,
+            "team": [lawyer_secondary, lawyer_primary],
+        },
+        {
+            "case_number": "CASE-2026-003",
+            "title": "Трудовой спор о восстановлении на работе",
+            "category": "трудовое право",
+            "description": "Подготовка позиции по делу, сбор доказательств, расчёт выплат и подготовка к судебному заседанию.",
+            "stage": CaseStage.DOC_PREPARATION,
+            "priority": "HIGH",
+            "opened_at": date.today() - timedelta(days=7),
+            "deadline": date.today() + timedelta(days=7),
+            "client_name": "ИП Соколова Е.А.",
+            "responsible_lawyer": lawyer_primary,
+            "team": [lawyer_primary],
+        },
+        {
+            "case_number": "CASE-2026-004",
+            "title": "Судебное взыскание неустойки с подрядчика",
+            "category": "судебное производство",
+            "description": "Ведение активной судебной стадии, подготовка возражений, контроль сроков и сопровождение заседаний.",
+            "stage": CaseStage.COURT,
+            "priority": "MEDIUM",
+            "opened_at": date.today() - timedelta(days=12),
+            "deadline": date.today() + timedelta(days=4),
+            "client_name": "АО Вектор",
+            "responsible_lawyer": lawyer_third,
+            "team": [lawyer_secondary, lawyer_third],
+        },
+    ]
+
+    case_ids_with_tasks = {
+        item[0]
+        for item in db.execute(text("SELECT legal_case_id FROM case_tasks")).fetchall()
+        if item[0] is not None
+    }
+
+    for payload in demo_cases:
+        legal_case = db.scalar(select(LegalCase).where(LegalCase.case_number == payload["case_number"]))
+        if not legal_case:
+            legal_case = LegalCase(
+                case_number=payload["case_number"],
+                title=payload["title"],
+                category=payload["category"],
+                description=payload["description"],
+                stage=payload["stage"],
+                priority=payload["priority"],
+                opened_at=payload["opened_at"],
+                deadline=payload["deadline"],
+                client_id=clients_by_name[payload["client_name"]].id,
+                responsible_lawyer_id=payload["responsible_lawyer"].id,
+            )
+            db.add(legal_case)
+            db.flush()
+
+        legal_case.title = payload["title"]
+        legal_case.category = payload["category"]
+        legal_case.description = payload["description"]
+        legal_case.stage = payload["stage"]
+        legal_case.priority = payload["priority"]
+        legal_case.opened_at = payload["opened_at"]
+        legal_case.deadline = payload["deadline"]
+        legal_case.client_id = clients_by_name[payload["client_name"]].id
+        legal_case.responsible_lawyer_id = payload["responsible_lawyer"].id
+
+        current_ids = {lawyer.id for lawyer in legal_case.lawyers}
+        seen_team_ids = set()
+        for lawyer in payload["team"]:
+            if lawyer.id in seen_team_ids:
+                continue
+            seen_team_ids.add(lawyer.id)
+            if lawyer.id not in current_ids:
+                legal_case.lawyers.append(lawyer)
+
+        if legal_case.id not in case_ids_with_tasks:
+            db.add(
+                CaseTask(
+                    legal_case_id=legal_case.id,
+                    title=f"Подготовить материалы по делу {legal_case.case_number}",
+                    due_date=(legal_case.deadline or date.today()) - timedelta(days=2),
+                    status=TaskStatus.IN_PROGRESS,
+                    priority=legal_case.priority,
+                    assignee_id=legal_case.responsible_lawyer_id,
+                    description="Демонстрационная задача для канбан-доски и календаря.",
+                )
+            )
+            case_ids_with_tasks.add(legal_case.id)
+
+        if not db.scalar(select(func.count(CaseComment.id)).where(CaseComment.legal_case_id == legal_case.id)):
+            db.add_all(
+                [
+                    CaseComment(
+                        legal_case_id=legal_case.id,
+                        user_id=payload["responsible_lawyer"].id,
+                        message="Карточка проверена. Начинаем работу по текущей стадии.",
+                        is_internal=True,
+                    ),
+                    CaseComment(
+                        legal_case_id=legal_case.id,
+                        user_id=payload["responsible_lawyer"].id,
+                        message="Нужно держать под контролем ближайший дедлайн и комплект документов.",
+                        is_internal=True,
+                    ),
+                ]
+            )
+
+    db.commit()
+
+
 def seed_data() -> dict[str, str]:
     db = SessionLocal()
     try:
         create_schema()
         existing_admin = db.scalar(select(User).where(User.role == Role.ADMIN))
         if existing_admin:
+            _ensure_demo_board_data(db)
             return {
                 "admin_username": existing_admin.username,
                 "admin_password": "(уже существует)"
@@ -105,69 +283,8 @@ def seed_data() -> dict[str, str]:
         db.add_all([admin, lawyer1, lawyer2])
         db.flush()
 
-        client = Client(
-            name="ООО Ромашка",
-            client_type="ORGANIZATION",
-            email="contact@romashka.local",
-            phone="+7 900 111-11-11",
-            address="г. Екатеринбург, ул. Ленина, 10",
-            notes="Приоритетный корпоративный клиент",
-        )
-        db.add(client)
-        db.flush()
-
-        case = LegalCase(
-            case_number="CASE-2026-001",
-            title="Взыскание задолженности по договору поставки",
-            category="договоры",
-            description="Подготовка претензии и иска по просроченной оплате.",
-            stage=CaseStage.DOC_ANALYSIS,
-            priority="HIGH",
-            opened_at=date.today(),
-            deadline=date.today() + timedelta(days=30),
-            client_id=client.id,
-            responsible_lawyer_id=lawyer1.id,
-        )
-        case.lawyers.extend([lawyer1, lawyer2])
-        db.add(case)
-        db.flush()
-
-        tasks = [
-            "Подготовить досудебную претензию",
-            "Собрать первичные доказательства",
-            "Проверить срок исковой давности",
-            "Подготовить проект иска",
-            "Согласовать пакет документов",
-            "Подготовить правовое заключение",
-            "Сформировать судебную папку",
-            "Подготовить ходатайство",
-            "Проверить контрагента",
-            "Подготовить выступление",
-            "Изучить судебную практику",
-            "Рассчитать неустойку",
-            "Направить копии ответчику",
-            "Подготовить замечания на отзыв",
-            "Обновить стратегию защиты",
-            "Собрать доверенности",
-            "Проверить документы на подлинность",
-            "Сформировать таймлайн событий",
-            "Подготовить ответы клиенту",
-            "Проверить финальный пакет",
-        ]
-        for i, title in enumerate(tasks, start=1):
-            db.add(
-                CaseTask(
-                    legal_case_id=case.id,
-                    title=title,
-                    due_date=date.today() + timedelta(days=i),
-                    status=TaskStatus.DONE if i % 5 == 0 else TaskStatus.IN_PROGRESS,
-                    priority="HIGH" if i % 3 == 0 else "MEDIUM",
-                    assignee_id=lawyer1.id if i % 2 else lawyer2.id,
-                    description="Задача создана автоматически для демонстрации календаря и сроков.",
-                )
-            )
-
         db.commit()
+        _ensure_demo_board_data(db)
         return {
             "admin_username": admin_username,
             "admin_password": admin_password,

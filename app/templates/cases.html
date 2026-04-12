@@ -1,7 +1,7 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 {% block title %}Дела{% endblock %}
 {% block content %}
-<section class="container page">
+<section class="page">
   <h1>Юридические дела</h1>
 
   {% if created %}<p class="success">Дело успешно создано.</p>{% endif %}
@@ -53,7 +53,9 @@
       <label class="span-3">Описание
         <textarea name="description" rows="3"></textarea>
       </label>
-      <button type="submit" class="auth-action">Сохранить дело</button>
+      <div class="form-actions form-actions-left span-3">
+        <button type="submit" class="auth-action">Сохранить дело</button>
+      </div>
     </form>
   </div>
 
@@ -62,14 +64,14 @@
       <thead><tr><th>Номер</th><th>Название</th><th>Клиент</th><th>Стадия</th><th>TOPSIS</th><th>Изменить стадию</th></tr></thead>
       <tbody>
       {% for item in cases %}
-      <tr>
+      <tr data-status-row="case-{{ item.id }}">
         <td>{{ item.case_number }}</td>
         <td>{{ item.title }}</td>
         <td>{{ item.client.name if item.client else '-' }}</td>
-        <td>{{ stage_labels[item.stage] }}</td>
+        <td data-status-label>{{ stage_labels[item.stage] }}</td>
         <td><a href="/cases/{{ item.id }}/topsis">Рекомендация</a></td>
-        <td>
-          <form method="post" action="/cases/{{ item.id }}/stage" class="compact-form">
+        <td class="action-cell">
+          <form method="post" action="/cases/{{ item.id }}/stage" class="compact-form js-status-form" data-status-kind="case">
             <select name="stage">
               {% for stage in stages %}
               <option value="{{ stage.value }}" {% if stage == item.stage %}selected{% endif %}>{{ stage_labels[stage] }}</option>
