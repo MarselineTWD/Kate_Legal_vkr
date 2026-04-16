@@ -14,6 +14,7 @@ from .security import hash_password
 def create_schema() -> None:
     Base.metadata.create_all(bind=engine)
     _ensure_user_registration_columns()
+    _ensure_notification_timestamp_column()
 
 
 def _ensure_user_registration_columns() -> None:
@@ -54,6 +55,39 @@ def _ensure_user_registration_columns() -> None:
         for column_name, sql_type in required_columns.items():
             if column_name not in existing:
                 conn.execute(text(f"ALTER TABLE users ADD COLUMN {column_name} {sql_type}"))
+
+
+def _ensure_notification_timestamp_column() -> None:
+    with engine.begin() as conn:
+        dialect = conn.dialect.name
+
+        if dialect == "sqlite":
+            existing = {
+                row[1]
+                for row in conn.execute(text("PRAGMA table_info(notifications)")).fetchall()
+            }
+            if "created_at" not in existing:
+                conn.execute(text("ALTER TABLE notifications ADD COLUMN created_at DATETIME"))
+            conn.execute(text("UPDATE notifications SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL"))
+            return
+
+        if dialect == "postgresql":
+            conn.execute(text("ALTER TABLE notifications ADD COLUMN IF NOT EXISTS created_at TIMESTAMP"))
+            conn.execute(text("UPDATE notifications SET created_at = NOW() WHERE created_at IS NULL"))
+            return
+
+        existing = {
+            row[0]
+            for row in conn.execute(
+                text(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_name = 'notifications'"
+                )
+            ).fetchall()
+        }
+        if "created_at" not in existing:
+            conn.execute(text("ALTER TABLE notifications ADD COLUMN created_at TIMESTAMP"))
+        conn.execute(text("UPDATE notifications SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL"))
 
 
 def _ensure_demo_board_data(db) -> None:

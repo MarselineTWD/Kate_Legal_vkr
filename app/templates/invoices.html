@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Счета{% endblock %}
 {% block content %}
-<section class="page">
+<section class="page page--nav-offset">
   <h1>Счета и платежи</h1>
 
   {% if created %}<p class="success">Счет успешно создан.</p>{% endif %}
@@ -39,7 +39,7 @@
   </div>
 
   <div class="table-card">
-    <table>
+    <table data-resize-key="invoices">
       <thead><tr><th>Номер</th><th>Сумма</th><th>Срок оплаты</th><th>Статус</th><th>ID дела</th></tr></thead>
       <tbody>
       {% for item in invoices %}

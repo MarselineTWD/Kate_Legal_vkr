@@ -75,32 +75,176 @@
 
 (function () {
   const tables = document.querySelectorAll('.table-card table');
-  if (!tables.length) return;
+  if (!tables.length || window.matchMedia('(max-width: 700px)').matches) return;
+
+  const STORAGE_VERSION = 'v5';
+  const MIN_COLUMN_WIDTH = 76;
+
+  const readStoredWidth = (key) => {
+    try {
+      return Number(window.localStorage.getItem(key) || 0);
+    } catch (error) {
+      return 0;
+    }
+  };
+
+  const writeStoredWidth = (key, value) => {
+    try {
+      window.localStorage.setItem(key, String(Math.round(value)));
+    } catch (error) {
+      void error;
+    }
+  };
 
   tables.forEach((table, tableIndex) => {
-    const headers = Array.from(table.querySelectorAll('thead th'));
+    const headRow = table.tHead && table.tHead.rows.length ? table.tHead.rows[0] : null;
+    if (!headRow) return;
+
+    const headers = Array.from(headRow.cells);
     if (!headers.length) return;
 
     table.classList.add('resizable-table');
 
-    const syncTableWidth = () => {
-      const containerWidth = table.parentElement ? table.parentElement.clientWidth : table.clientWidth;
-      const totalWidth = headers.reduce((sum, item) => sum + Math.max(110, item.offsetWidth), 0);
-      table.style.width = `${Math.max(containerWidth, totalWidth)}px`;
+    const widthCache = headers.map((header, headerIndex) => {
+      const rawKeyBase = table.dataset.resizeKey || `${window.location.pathname}:${tableIndex}`;
+      const keyBase = `${STORAGE_VERSION}:${rawKeyBase}`;
+      const storageKey = `table-col-width:${keyBase}:${headerIndex}`;
+      const measuredWidth = Math.ceil(header.getBoundingClientRect().width) || MIN_COLUMN_WIDTH;
+      const hardLocked = header.classList.contains('is-column-fixed');
+      const minLocked = header.classList.contains('is-column-locked');
+      const explicitMinWidth = Number(header.dataset.colMinWidth || 0);
+      const minWidth = Math.max(
+        explicitMinWidth || 0,
+        minLocked ? measuredWidth : MIN_COLUMN_WIDTH,
+        MIN_COLUMN_WIDTH,
+      );
+      const storedWidth = hardLocked ? 0 : readStoredWidth(storageKey);
+      return {
+        header,
+        storageKey,
+        hardLocked,
+        minLocked,
+        minWidth,
+        storedWidth,
+        width: Math.max(storedWidth || measuredWidth, minWidth),
+      };
+    });
+
+    let colgroup = table.querySelector('colgroup[data-resizable-columns]');
+    if (colgroup) {
+      colgroup.remove();
+    }
+    colgroup = document.createElement('colgroup');
+    colgroup.dataset.resizableColumns = '1';
+    table.insertBefore(colgroup, table.firstChild);
+
+    const cols = widthCache.map((item) => {
+      const col = document.createElement('col');
+      col.style.width = `${item.width}px`;
+      colgroup.appendChild(col);
+      return col;
+    });
+
+    const getWidth = (index) => parseFloat(cols[index].style.width || '0') || widthCache[index].width || MIN_COLUMN_WIDTH;
+
+    const getMinWidth = (index) => widthCache[index].minWidth;
+
+    const getContainerWidth = () => (table.parentElement ? table.parentElement.clientWidth : 0);
+
+    const applyTableWidth = () => {
+      const totalWidth = cols.reduce((sum, col) => sum + (parseFloat(col.style.width || '0') || 0), 0);
+      table.style.width = `${Math.ceil(totalWidth)}px`;
+    };
+
+    const setWidth = (index, value) => {
+      const safeWidth = Math.max(getMinWidth(index), Math.round(value));
+      widthCache[index].width = safeWidth;
+      cols[index].style.width = `${safeWidth}px`;
+    };
+
+    const persistWidths = (...indexes) => {
+      indexes.forEach((index) => {
+        if (index < 0 || widthCache[index].hardLocked) return;
+        writeStoredWidth(widthCache[index].storageKey, getWidth(index));
+      });
+    };
+
+    const persistAllWidths = () => {
+      persistWidths(...widthCache.map((_, index) => index));
+    };
+
+    const fitToContainer = () => {
+      const containerWidth = getContainerWidth();
+      if (!containerWidth) return;
+
+      const widths = widthCache.map((_, index) => getWidth(index));
+      const minWidths = widthCache.map((_, index) => getMinWidth(index));
+      const unlockedIndexes = widthCache
+        .map((item, index) => (item.hardLocked ? -1 : index))
+        .filter((index) => index >= 0);
+
+      if (!unlockedIndexes.length) {
+        applyTableWidth();
+        return;
+      }
+
+      let totalWidth = widths.reduce((sum, value) => sum + value, 0);
+
+      if (totalWidth > containerWidth) {
+        let overflow = totalWidth - containerWidth;
+        while (overflow > 0.5) {
+          const shrinkable = unlockedIndexes.filter((index) => widths[index] - minWidths[index] > 0.5);
+          if (!shrinkable.length) break;
+
+          const available = shrinkable.reduce((sum, index) => sum + (widths[index] - minWidths[index]), 0);
+          if (available <= 0) break;
+
+          let reduced = 0;
+          shrinkable.forEach((index) => {
+            const capacity = widths[index] - minWidths[index];
+            const portion = (capacity / available) * overflow;
+            const delta = Math.min(capacity, portion);
+            widths[index] -= delta;
+            reduced += delta;
+          });
+
+          if (reduced <= 0.1) break;
+          overflow -= reduced;
+        }
+      } else if (totalWidth < containerWidth) {
+        const extra = containerWidth - totalWidth;
+        const bonus = extra / unlockedIndexes.length;
+        unlockedIndexes.forEach((index) => {
+          widths[index] += bonus;
+        });
+      }
+
+      widths.forEach((value, index) => {
+        setWidth(index, value);
+      });
+      applyTableWidth();
+    };
+
+    headers.forEach((header) => {
+      header.querySelector('.col-resizer')?.remove();
+    });
+
+    const findCompanionIndex = (headerIndex) => {
+      for (let index = headerIndex + 1; index < widthCache.length; index += 1) {
+        if (!widthCache[index].hardLocked) {
+          return index;
+        }
+      }
+      for (let index = headerIndex - 1; index >= 0; index -= 1) {
+        if (!widthCache[index].hardLocked) {
+          return index;
+        }
+      }
+      return -1;
     };
 
     headers.forEach((header, headerIndex) => {
-      if (header.querySelector('.col-resizer')) return;
-
-      const storedWidth = (() => {
-        try {
-          return Number(window.localStorage.getItem(`table-width-${tableIndex}-${headerIndex}`) || 0);
-        } catch (error) {
-          return 0;
-        }
-      })();
-      const initialWidth = Math.max(110, storedWidth || header.offsetWidth);
-      header.style.width = `${initialWidth}px`;
+      if (widthCache[headerIndex].hardLocked) return;
 
       const handle = document.createElement('span');
       handle.className = 'col-resizer';
@@ -108,36 +252,69 @@
       header.appendChild(handle);
 
       handle.addEventListener('mousedown', (event) => {
+        if (event.button !== 0) return;
         event.preventDefault();
+        event.stopPropagation();
+
+        const companionIndex = findCompanionIndex(headerIndex);
         const startX = event.clientX;
-        const startWidth = header.offsetWidth;
-        const minWidth = 110;
+        const startWidth = getWidth(headerIndex);
+        const startCompanionWidth = companionIndex >= 0 ? getWidth(companionIndex) : 0;
+        const minWidth = getMinWidth(headerIndex);
+        const minCompanionWidth = companionIndex >= 0 ? getMinWidth(companionIndex) : 0;
 
         const onMove = (moveEvent) => {
-          const nextWidth = Math.max(minWidth, startWidth + moveEvent.clientX - startX);
-          header.style.width = `${nextWidth}px`;
-          syncTableWidth();
-          try {
-            window.localStorage.setItem(`table-width-${tableIndex}-${headerIndex}`, String(nextWidth));
-          } catch (error) {
-            void error;
+          const delta = moveEvent.clientX - startX;
+
+          if (companionIndex >= 0) {
+            let currentWidth = startWidth + delta;
+            let companionWidth = startCompanionWidth - delta;
+
+            if (currentWidth < minWidth) {
+              currentWidth = minWidth;
+              companionWidth = startCompanionWidth + (startWidth - minWidth);
+            }
+
+            if (companionWidth < minCompanionWidth) {
+              companionWidth = minCompanionWidth;
+              currentWidth = startWidth + (startCompanionWidth - minCompanionWidth);
+            }
+
+            setWidth(headerIndex, currentWidth);
+            setWidth(companionIndex, companionWidth);
+          } else {
+            let currentWidth = startWidth + delta;
+            const containerWidth = getContainerWidth();
+            if (containerWidth) {
+              const otherColumnsWidth = widthCache.reduce(
+                (sum, _, index) => (index === headerIndex ? sum : sum + getWidth(index)),
+                0,
+              );
+              const maxWidth = Math.max(minWidth, containerWidth - otherColumnsWidth);
+              currentWidth = Math.min(currentWidth, maxWidth);
+            }
+            setWidth(headerIndex, currentWidth);
           }
+
+          applyTableWidth();
         };
 
         const onUp = () => {
-          document.removeEventListener('mousemove', onMove);
-          document.removeEventListener('mouseup', onUp);
           document.body.classList.remove('is-resizing-columns');
+          window.removeEventListener('mousemove', onMove);
+          window.removeEventListener('mouseup', onUp);
+          fitToContainer();
+          persistAllWidths();
         };
 
         document.body.classList.add('is-resizing-columns');
-        document.addEventListener('mousemove', onMove);
-        document.addEventListener('mouseup', onUp);
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
       });
     });
 
-    syncTableWidth();
-    window.addEventListener('resize', syncTableWidth);
+    fitToContainer();
+    window.addEventListener('resize', fitToContainer);
   });
 })();
 
@@ -244,6 +421,506 @@
       }
     });
   });
+})();
+
+(function () {
+  const forms = document.querySelectorAll('.js-notification-read-form');
+  if (!forms.length) return;
+
+  const unreadNode = document.getElementById('notifications-unread-count');
+
+  forms.forEach((form) => {
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+
+      const button = form.querySelector('button[type="submit"]');
+      const row = form.closest('[data-notification-row]');
+      const statusCell = row ? row.querySelector('[data-notification-status]') : null;
+      const actionCell = row ? row.querySelector('[data-notification-action]') : null;
+      const originalText = button ? button.textContent : '';
+
+      if (button) {
+        button.disabled = true;
+        button.textContent = 'Сохраняем...';
+      }
+
+      try {
+        const response = await fetch(form.action, {
+          method: 'POST',
+          headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error('notification update failed');
+        }
+
+        const payload = await response.json();
+
+        if (statusCell) {
+          statusCell.textContent = 'Прочитано';
+        }
+
+        if (actionCell) {
+          actionCell.textContent = '-';
+        }
+
+        if (typeof payload.unread === 'number' && unreadNode) {
+          unreadNode.textContent = String(payload.unread);
+        }
+
+        if (row) {
+          row.classList.add('status-row-updated');
+          window.setTimeout(() => row.classList.remove('status-row-updated'), 1400);
+        }
+      } catch (error) {
+        if (button) {
+          button.disabled = false;
+          button.textContent = originalText;
+        }
+        window.alert('Не удалось отметить уведомление как прочитанное. Попробуйте еще раз.');
+        return;
+      }
+
+      if (button) {
+        button.disabled = false;
+      }
+    });
+  });
+})();
+
+(function () {
+  const modal = document.getElementById('client-chat-modal');
+  const form = document.getElementById('client-chat-form');
+  const thread = document.getElementById('client-chat-thread');
+  const titleNode = document.getElementById('client-chat-title');
+  const metaNode = document.getElementById('client-chat-meta');
+  const openButtons = document.querySelectorAll('[data-client-chat-open]');
+  if (!modal || !form || !thread || !titleNode || !metaNode || !openButtons.length) return;
+
+  const closeButtons = modal.querySelectorAll('[data-client-chat-close]');
+  let activeClientId = '';
+
+  const renderMessages = (messages) => {
+    thread.innerHTML = '';
+    if (!messages.length) {
+      const empty = document.createElement('p');
+      empty.className = 'workspace-list__empty';
+      empty.textContent = 'Сообщений пока нет.';
+      thread.appendChild(empty);
+      return;
+    }
+
+    messages.forEach((item) => {
+      const card = document.createElement('article');
+      card.className = `client-chat-item ${item.is_from_client ? 'client-chat-item--client' : 'client-chat-item--staff'}`;
+
+      const head = document.createElement('div');
+      head.className = 'client-chat-item__meta';
+      head.textContent = `${item.author} • ${item.created_at}`;
+
+      const body = document.createElement('p');
+      body.className = 'client-chat-item__text';
+      body.textContent = item.message;
+
+      card.appendChild(head);
+      card.appendChild(body);
+      thread.appendChild(card);
+    });
+
+    thread.scrollTop = thread.scrollHeight;
+  };
+
+  const loadChat = async (clientId) => {
+    thread.innerHTML = '<p class="workspace-list__empty">Загружаем переписку...</p>';
+    const response = await fetch(`/clients/${clientId}/chat`, {
+      headers: {
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+    });
+    if (!response.ok) {
+      throw new Error('client chat load failed');
+    }
+    const payload = await response.json();
+    titleNode.textContent = `Чат: ${payload.client.name}`;
+    const metaParts = [];
+    if (payload.client.email) metaParts.push(payload.client.email);
+    if (payload.client.phone) metaParts.push(payload.client.phone);
+    metaNode.textContent = metaParts.join(' • ');
+    renderMessages(payload.messages || []);
+  };
+
+  const closeModal = () => {
+    modal.hidden = true;
+    document.body.classList.remove('is-modal-open');
+    form.reset();
+    activeClientId = '';
+  };
+
+  const openModal = async (button) => {
+    activeClientId = button.dataset.clientId || '';
+    titleNode.textContent = `Чат: ${button.dataset.clientName || 'Клиент'}`;
+    metaNode.textContent = '';
+    form.action = `/clients/${activeClientId}/chat`;
+    modal.hidden = false;
+    document.body.classList.add('is-modal-open');
+    try {
+      await loadChat(activeClientId);
+    } catch (error) {
+      thread.innerHTML = '<p class="workspace-list__empty">Не удалось загрузить чат.</p>';
+    }
+  };
+
+  openButtons.forEach((button) => {
+    button.addEventListener('click', async () => {
+      await openModal(button);
+    });
+  });
+
+  closeButtons.forEach((button) => {
+    button.addEventListener('click', closeModal);
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !modal.hidden) {
+      closeModal();
+    }
+  });
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!activeClientId) return;
+
+    const submitButton = form.querySelector('button[type="submit"]');
+    const originalText = submitButton ? submitButton.textContent : '';
+    const formData = new FormData(form);
+    if (!formData.get('message') || !String(formData.get('message')).trim()) {
+      window.alert('Введите текст сообщения.');
+      return;
+    }
+    if (!formData.get('is_from_client')) {
+      formData.set('is_from_client', 'false');
+    }
+
+    if (submitButton) {
+      submitButton.disabled = true;
+      submitButton.textContent = 'Отправляем...';
+    }
+
+    try {
+      const response = await fetch(form.action, {
+        method: 'POST',
+        body: formData,
+        headers: {
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+      });
+      if (!response.ok) {
+        throw new Error('client chat save failed');
+      }
+      const payload = await response.json();
+      renderMessages(payload.messages || []);
+      form.reset();
+    } catch (error) {
+      window.alert('Не удалось отправить сообщение. Попробуйте еще раз.');
+    } finally {
+      if (submitButton) {
+        submitButton.disabled = false;
+        submitButton.textContent = originalText;
+      }
+    }
+  });
+})();
+
+(function () {
+  const shell = document.querySelector('[data-clients-shell]');
+  if (!shell) return;
+
+  const directory = shell.querySelector('[data-clients-directory]');
+  const chatPage = shell.querySelector('[data-client-chat-page]');
+  const backButton = shell.querySelector('[data-client-chat-back]');
+  const form = document.getElementById('client-chat-form');
+  const thread = document.getElementById('client-chat-thread');
+  const titleNode = document.getElementById('client-chat-title');
+  const metaNode = document.getElementById('client-chat-meta');
+  const openButtons = shell.querySelectorAll('[data-client-chat-open]');
+  const overviewCasesTotal = document.getElementById('overview-cases-total');
+  const overviewCasesActive = document.getElementById('overview-cases-active');
+  const overviewTasksActive = document.getElementById('overview-tasks-active');
+  const overviewTasksOverdue = document.getElementById('overview-tasks-overdue');
+  const overviewInvoicesTotal = document.getElementById('overview-invoices-total');
+  const overviewInvoicesUnpaid = document.getElementById('overview-invoices-unpaid');
+  const overviewAddress = document.getElementById('overview-client-address');
+  const overviewNotes = document.getElementById('overview-client-notes');
+  const overviewCases = document.getElementById('overview-recent-cases');
+  const overviewTasks = document.getElementById('overview-upcoming-tasks');
+  const overviewInvoices = document.getElementById('overview-recent-invoices');
+  const messageInput = form ? form.querySelector('textarea[name="message"]') : null;
+  if (!directory || !chatPage || !backButton || !form || !thread || !titleNode || !metaNode) return;
+
+  const ACTIVE_CHAT_STORAGE_KEY = 'clients-active-chat-id';
+  const CHAT_DRAFT_STORAGE_PREFIX = 'clients-chat-draft:';
+  let activeClientId = '';
+
+  const readStoredClientId = () => {
+    try {
+      return window.localStorage.getItem(ACTIVE_CHAT_STORAGE_KEY) || '';
+    } catch (error) {
+      return '';
+    }
+  };
+
+  const storeClientId = (clientId) => {
+    try {
+      window.localStorage.setItem(ACTIVE_CHAT_STORAGE_KEY, String(clientId));
+    } catch (error) {
+      void error;
+    }
+  };
+
+  const clearStoredClientId = () => {
+    try {
+      window.localStorage.removeItem(ACTIVE_CHAT_STORAGE_KEY);
+    } catch (error) {
+      void error;
+    }
+  };
+
+  const readStoredDraft = (clientId) => {
+    if (!clientId) return '';
+    try {
+      return window.localStorage.getItem(`${CHAT_DRAFT_STORAGE_PREFIX}${clientId}`) || '';
+    } catch (error) {
+      return '';
+    }
+  };
+
+  const storeDraft = (clientId, value) => {
+    if (!clientId) return;
+    const key = `${CHAT_DRAFT_STORAGE_PREFIX}${clientId}`;
+    try {
+      if (value) {
+        window.localStorage.setItem(key, value);
+      } else {
+        window.localStorage.removeItem(key);
+      }
+    } catch (error) {
+      void error;
+    }
+  };
+
+  const clearDraft = (clientId) => {
+    if (!clientId) return;
+    try {
+      window.localStorage.removeItem(`${CHAT_DRAFT_STORAGE_PREFIX}${clientId}`);
+    } catch (error) {
+      void error;
+    }
+  };
+
+  const setChatMode = (enabled) => {
+    shell.classList.toggle('clients-shell--chat-open', enabled);
+    directory.hidden = enabled;
+    chatPage.hidden = !enabled;
+    chatPage.style.display = enabled ? '' : 'none';
+  };
+
+  const renderMessages = (messages) => {
+    thread.innerHTML = '';
+    if (!messages.length) {
+      const empty = document.createElement('p');
+      empty.className = 'workspace-list__empty';
+      empty.textContent = 'Сообщений пока нет.';
+      thread.appendChild(empty);
+      return;
+    }
+
+    messages.forEach((item) => {
+      const card = document.createElement('article');
+      card.className = `client-chat-item ${item.is_from_client ? 'client-chat-item--client' : 'client-chat-item--staff'}`;
+
+      const head = document.createElement('div');
+      head.className = 'client-chat-item__meta';
+      head.textContent = `${item.author} • ${item.created_at}`;
+
+      const body = document.createElement('p');
+      body.className = 'client-chat-item__text';
+      body.textContent = item.message;
+
+      card.appendChild(head);
+      card.appendChild(body);
+      thread.appendChild(card);
+    });
+
+    thread.scrollTop = thread.scrollHeight;
+  };
+
+  const renderOverviewList = (container, items, renderText) => {
+    if (!container) return;
+    container.innerHTML = '';
+    if (!items || !items.length) {
+      const empty = document.createElement('li');
+      empty.className = 'workspace-list__empty';
+      empty.textContent = 'Нет данных';
+      container.appendChild(empty);
+      return;
+    }
+    items.forEach((item) => {
+      const li = document.createElement('li');
+      li.textContent = renderText(item);
+      container.appendChild(li);
+    });
+  };
+
+  const currency = new Intl.NumberFormat('ru-RU', {
+    style: 'currency',
+    currency: 'RUB',
+    maximumFractionDigits: 2,
+  });
+
+  const renderOverview = (payload) => {
+    const overview = payload.overview || {};
+    if (overviewCasesTotal) overviewCasesTotal.textContent = String(overview.cases_total || 0);
+    if (overviewCasesActive) overviewCasesActive.textContent = String(overview.cases_active || 0);
+    if (overviewTasksActive) overviewTasksActive.textContent = String(overview.tasks_active || 0);
+    if (overviewTasksOverdue) overviewTasksOverdue.textContent = String(overview.tasks_overdue || 0);
+    if (overviewInvoicesTotal) overviewInvoicesTotal.textContent = String(overview.invoices_total || 0);
+    if (overviewInvoicesUnpaid) overviewInvoicesUnpaid.textContent = String(overview.invoices_unpaid || 0);
+
+    if (overviewAddress) overviewAddress.textContent = payload.client.address || '-';
+    if (overviewNotes) overviewNotes.textContent = payload.client.notes || '-';
+
+    renderOverviewList(
+      overviewCases,
+      overview.recent_cases || [],
+      (item) => `${item.case_number}: ${item.title} (${item.stage}, ${item.deadline})`,
+    );
+    renderOverviewList(
+      overviewTasks,
+      overview.upcoming_tasks || [],
+      (item) => `${item.due_date} • ${item.case_number} • ${item.title} (${item.status})`,
+    );
+    renderOverviewList(
+      overviewInvoices,
+      overview.recent_invoices || [],
+      (item) => `${item.number} • ${currency.format(Number(item.amount || 0))} • ${item.status} • до ${item.due_date}`,
+    );
+  };
+
+  const loadChat = async (clientId) => {
+    thread.innerHTML = '<p class="workspace-list__empty">Загружаем переписку...</p>';
+    const response = await fetch(`/clients/${clientId}/chat`, {
+      headers: {
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+    });
+    if (!response.ok) {
+      throw new Error('client chat load failed');
+    }
+    const payload = await response.json();
+    titleNode.textContent = `Чат: ${payload.client.name}`;
+    const metaParts = [];
+    if (payload.client.email) metaParts.push(payload.client.email);
+    if (payload.client.phone) metaParts.push(payload.client.phone);
+    metaNode.textContent = metaParts.join(' • ');
+    renderMessages(payload.messages || []);
+    renderOverview(payload);
+  };
+
+  const closeChat = () => {
+    setChatMode(false);
+    form.reset();
+    activeClientId = '';
+    clearStoredClientId();
+  };
+
+  const openChatByClientId = async (clientId, clientName = 'Клиент') => {
+    if (!clientId) return;
+    activeClientId = String(clientId);
+    storeClientId(activeClientId);
+    titleNode.textContent = `Чат: ${clientName}`;
+    metaNode.textContent = '';
+    form.action = `/clients/${activeClientId}/chat`;
+    setChatMode(true);
+    if (messageInput) {
+      messageInput.value = readStoredDraft(activeClientId);
+    }
+    try {
+      await loadChat(activeClientId);
+    } catch (error) {
+      thread.innerHTML = '<p class="workspace-list__empty">Не удалось загрузить чат.</p>';
+    }
+  };
+
+  if (messageInput) {
+    messageInput.addEventListener('input', () => {
+      if (!activeClientId) return;
+      storeDraft(activeClientId, messageInput.value);
+    });
+  }
+
+  openButtons.forEach((button) => {
+    button.addEventListener('click', async () => {
+      await openChatByClientId(button.dataset.clientId || '', button.dataset.clientName || 'Клиент');
+    });
+  });
+
+  backButton.addEventListener('click', () => {
+    closeChat();
+  });
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!activeClientId) return;
+
+    const submitButton = form.querySelector('button[type="submit"]');
+    const originalText = submitButton ? submitButton.textContent : '';
+    const formData = new FormData(form);
+    if (!formData.get('message') || !String(formData.get('message')).trim()) {
+      window.alert('Введите текст сообщения.');
+      return;
+    }
+    if (!formData.get('is_from_client')) {
+      formData.set('is_from_client', 'false');
+    }
+
+    if (submitButton) {
+      submitButton.disabled = true;
+      submitButton.textContent = 'Отправляем...';
+    }
+
+    try {
+      const response = await fetch(form.action, {
+        method: 'POST',
+        body: formData,
+        headers: {
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+      });
+      if (!response.ok) {
+        throw new Error('client chat save failed');
+      }
+      const payload = await response.json();
+      renderMessages(payload.messages || []);
+      renderOverview(payload);
+      clearDraft(activeClientId);
+      form.reset();
+    } catch (error) {
+      window.alert('Не удалось отправить сообщение. Попробуйте еще раз.');
+    } finally {
+      if (submitButton) {
+        submitButton.disabled = false;
+        submitButton.textContent = originalText;
+      }
+    }
+  });
+
+  const initialClientId = shell.dataset.initialChatClientId || '';
+  setChatMode(Boolean(initialClientId));
+  if (initialClientId) {
+    openChatByClientId(initialClientId);
+  }
 })();
 
 (function () {

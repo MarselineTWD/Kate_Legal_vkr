@@ -3,20 +3,21 @@
 {% block content %}
 <section class="page">
   <h1>Уведомления</h1>
-  <p class="subtitle">Непрочитанных: {{ unread }}</p>
+  <p class="subtitle">Непрочитанных: <span id="notifications-unread-count">{{ unread }}</span></p>
 
   <div class="table-card">
-    <table class="readable-table notifications-table">
-      <thead><tr><th>Событие</th><th>Сообщение</th><th>Статус</th><th>Действие</th></tr></thead>
+    <table class="readable-table notifications-table" data-resize-key="notifications">
+      <thead><tr><th>Событие</th><th>Сообщение</th><th>Дата</th><th>Статус</th><th>Действие</th></tr></thead>
       <tbody>
       {% for item in notifications %}
-        <tr>
+        <tr data-notification-row data-notification-id="{{ item.id }}">
           <td>{{ item.title }}</td>
           <td>{{ item.message }}</td>
-          <td>{% if item.is_read %}Прочитано{% else %}Новое{% endif %}</td>
-          <td class="action-cell">
+          <td>{{ item.created_at.strftime('%d.%m.%Y %H:%M') if item.created_at else '-' }}</td>
+          <td data-notification-status>{% if item.is_read %}Прочитано{% else %}Новое{% endif %}</td>
+          <td class="action-cell" data-notification-action>
             {% if not item.is_read %}
-              <form method="post" action="/notifications/{{ item.id }}/read" class="compact-form">
+              <form method="post" action="/notifications/{{ item.id }}/read" class="compact-form js-notification-read-form">
                 <button type="submit">Прочитать</button>
               </form>
             {% else %}
@@ -25,7 +26,7 @@
           </td>
         </tr>
       {% else %}
-        <tr><td colspan="4">Уведомлений пока нет.</td></tr>
+        <tr><td colspan="5">Уведомлений пока нет.</td></tr>
       {% endfor %}
       </tbody>
     </table>

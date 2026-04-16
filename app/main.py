@@ -17,10 +17,12 @@ from .config import settings
 from .database import get_db
 from .models import (
     AuditLog,
+    CalendarEvent,
     CaseComment,
     CaseStage,
     CaseTask,
     Client,
+    ClientChatMessage,
     Invoice,
     LegalCase,
     Notification,
@@ -41,6 +43,16 @@ templates = Jinja2Templates(directory="app/templates")
 SITE2_DIR = Path("app/site2")
 
 
+@app.middleware("http")
+async def disable_cache_in_debug(request: Request, call_next):
+    response = await call_next(request)
+    if settings.debug and request.method in {"GET", "HEAD"}:
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
+
+
 STAGE_LABELS = {
     CaseStage.NEW_REQUEST: "Новая заявка",
     CaseStage.DOC_ANALYSIS: "Анализ документов",
@@ -53,6 +65,15 @@ STATUS_LABELS = {
     TaskStatus.TODO: "К выполнению",
     TaskStatus.IN_PROGRESS: "В работе",
     TaskStatus.DONE: "Сделано",
+}
+
+EVENT_TYPE_LABELS = {
+    "COURT": "Судебное заседание",
+    "MEETING": "Встреча",
+    "CLIENT": "Коммуникация с клиентом",
+    "DOCUMENT": "Документы",
+    "DEADLINE": "Крайний срок",
+    "CUSTOM": "Событие",
 }
 
 USERNAME_RE = re.compile(r"^[A-Za-z0-9_]{3,32}$")
@@ -286,6 +307,97 @@ def build_case_workspace(db: Session, legal_case: LegalCase) -> dict:
     }
 
 
+def build_client_chat_payload(db: Session, client: Client) -> dict:
+    client_cases = db.scalars(
+        select(LegalCase).where(LegalCase.client_id == client.id).order_by(LegalCase.opened_at.desc(), LegalCase.id.desc())
+    ).all()
+    case_ids = [item.id for item in client_cases]
+
+    client_tasks: list[CaseTask] = []
+    client_invoices: list[Invoice] = []
+    if case_ids:
+        client_tasks = db.scalars(
+            select(CaseTask).where(CaseTask.legal_case_id.in_(case_ids)).order_by(CaseTask.due_date, CaseTask.id)
+        ).all()
+        client_invoices = db.scalars(
+            select(Invoice).where(Invoice.legal_case_id.in_(case_ids)).order_by(Invoice.due_date.desc(), Invoice.id.desc())
+        ).all()
+
+    today = date.today()
+    active_cases = [item for item in client_cases if item.stage != CaseStage.COMPLETED]
+    active_tasks = [item for item in client_tasks if item.status != TaskStatus.DONE]
+    overdue_tasks = [item for item in client_tasks if item.status != TaskStatus.DONE and item.due_date < today]
+    unpaid_invoices = [item for item in client_invoices if (item.status or "").upper() != "PAID"]
+
+    messages = db.scalars(
+        select(ClientChatMessage)
+        .where(ClientChatMessage.client_id == client.id)
+        .order_by(ClientChatMessage.created_at, ClientChatMessage.id)
+    ).all()
+    users_map = {item.id: item for item in db.scalars(select(User)).all()}
+
+    payload_messages = []
+    for item in messages:
+        user = users_map.get(item.user_id) if item.user_id else None
+        author = client.name if item.is_from_client else ((user.full_name or user.username) if user else "Сотрудник")
+        payload_messages.append(
+            {
+                "id": item.id,
+                "message": item.message,
+                "author": author,
+                "is_from_client": item.is_from_client,
+                "created_at": item.created_at.strftime("%d.%m.%Y %H:%M"),
+            }
+        )
+
+    return {
+        "client": {
+            "id": client.id,
+            "name": client.name,
+            "email": client.email,
+            "phone": client.phone,
+            "address": client.address,
+            "notes": client.notes,
+        },
+        "overview": {
+            "cases_total": len(client_cases),
+            "cases_active": len(active_cases),
+            "tasks_active": len(active_tasks),
+            "tasks_overdue": len(overdue_tasks),
+            "invoices_total": len(client_invoices),
+            "invoices_unpaid": len(unpaid_invoices),
+            "recent_cases": [
+                {
+                    "case_number": item.case_number,
+                    "title": item.title,
+                    "stage": STAGE_LABELS[item.stage],
+                    "deadline": item.deadline.strftime("%d.%m.%Y") if item.deadline else "Без дедлайна",
+                }
+                for item in client_cases[:5]
+            ],
+            "upcoming_tasks": [
+                {
+                    "title": item.title,
+                    "case_number": item.legal_case.case_number if item.legal_case else "-",
+                    "due_date": item.due_date.strftime("%d.%m.%Y"),
+                    "status": STATUS_LABELS[item.status],
+                }
+                for item in active_tasks[:6]
+            ],
+            "recent_invoices": [
+                {
+                    "number": item.number,
+                    "amount": float(item.amount),
+                    "due_date": item.due_date.strftime("%d.%m.%Y"),
+                    "status": item.status,
+                }
+                for item in client_invoices[:6]
+            ],
+        },
+        "messages": payload_messages,
+    }
+
+
 @app.get("/", response_class=HTMLResponse)
 def landing():
     return FileResponse(SITE2_DIR / "index.html")
@@ -469,24 +581,32 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         "tasks_todo": len([t for t in tasks if t.status != TaskStatus.DONE]),
         "overdue_tasks": len(overdue),
         "recent_tasks": sorted(tasks, key=lambda t: t.due_date)[:8],
-        "last_notifications": db.scalars(select(Notification).order_by(Notification.id.desc()).limit(5)).all(),
+        "last_notifications": db.scalars(
+            select(Notification)
+            .order_by(Notification.is_read.asc(), Notification.created_at.desc(), Notification.id.desc())
+            .limit(5)
+        ).all(),
     }
     return templates.TemplateResponse("dashboard.html", {"request": request, **data, "user": user, "status_labels": STATUS_LABELS})
 
 
 @app.get("/clients", response_class=HTMLResponse)
-def clients_page(request: Request, q: str = "", db: Session = Depends(get_db)):
+def clients_page(request: Request, q: str = "", chat_client_id: int | None = None, db: Session = Depends(get_db)):
     user = require_auth(request, db)
     stmt = select(Client)
     if q.strip():
         stmt = stmt.where(Client.name.ilike(f"%{q.strip()}%"))
     clients = db.scalars(stmt.order_by(Client.id.desc())).all()
+    initial_chat_client_id = None
+    if chat_client_id and db.get(Client, chat_client_id):
+        initial_chat_client_id = chat_client_id
     return templates.TemplateResponse(
         "clients.html",
         {
             "request": request,
             "clients": clients,
             "q": q,
+            "initial_chat_client_id": initial_chat_client_id,
             "user": user,
             "created": request.query_params.get("created") == "1",
         },
@@ -523,6 +643,51 @@ def create_client(
     log_action(db, user, "Создан клиент", clean_name)
     db.commit()
     return RedirectResponse("/clients?created=1", status_code=303)
+
+
+@app.get("/clients/{client_id}/chat")
+def client_chat(client_id: int, request: Request, db: Session = Depends(get_db)):
+    _ = require_auth(request, db)
+    client = db.get(Client, client_id)
+    if not client:
+        raise HTTPException(status_code=404, detail="Клиент не найден")
+    return JSONResponse(build_client_chat_payload(db, client))
+
+
+@app.post("/clients/{client_id}/chat")
+def add_client_chat_message(
+    client_id: int,
+    request: Request,
+    message: str = Form(...),
+    is_from_client: str = Form("false"),
+    db: Session = Depends(get_db),
+):
+    user = require_auth(request, db)
+    client = db.get(Client, client_id)
+    if not client:
+        raise HTTPException(status_code=404, detail="Клиент не найден")
+
+    text = message.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Сообщение не может быть пустым")
+
+    from_client = is_from_client.strip().lower() in {"1", "true", "yes", "on"}
+    db.add(
+        ClientChatMessage(
+            client_id=client.id,
+            user_id=None if from_client else user.id,
+            message=text,
+            is_from_client=from_client,
+        )
+    )
+    if from_client:
+        db.add(Notification(recipient_id=user.id, title="Новое сообщение от клиента", message=client.name))
+    log_action(db, user, "Сообщение в чате клиента", f"{client.name}: {text[:80]}")
+    db.commit()
+
+    if request.headers.get("x-requested-with") == "XMLHttpRequest":
+        return JSONResponse(build_client_chat_payload(db, client))
+    return RedirectResponse("/clients", status_code=303)
 
 
 @app.get("/cases", response_class=HTMLResponse)
@@ -824,6 +989,10 @@ def calendar_page(request: Request, lawyer_id: int | None = None, db: Session = 
     if selected_lawyer:
         stmt = stmt.where(CaseTask.assignee_id == selected_lawyer.id)
     tasks = db.scalars(stmt).all()
+    legal_cases = db.scalars(select(LegalCase).order_by(LegalCase.case_number)).all()
+    case_map = {item.id: item for item in legal_cases}
+    calendar_events = db.scalars(select(CalendarEvent).order_by(CalendarEvent.starts_at, CalendarEvent.id)).all()
+
     events = []
     for task in tasks:
         events.append(
@@ -832,18 +1001,101 @@ def calendar_page(request: Request, lawyer_id: int | None = None, db: Session = 
                 "date": task.due_date.isoformat(),
                 "status": STATUS_LABELS[task.status],
                 "is_done": task.status == TaskStatus.DONE,
+                "kind": "TASK",
+                "event_type": "DEADLINE",
+                "case_number": task.legal_case.case_number if task.legal_case else "",
             }
         )
+    for event in calendar_events:
+        event_type = (event.event_type or "CUSTOM").upper()
+        related_case = case_map.get(event.legal_case_id) if event.legal_case_id else None
+        events.append(
+            {
+                "title": event.title,
+                "date": event.starts_at.date().isoformat(),
+                "status": EVENT_TYPE_LABELS.get(event_type, event_type),
+                "is_done": False,
+                "kind": "EVENT",
+                "event_type": event_type,
+                "case_number": related_case.case_number if related_case else "",
+            }
+        )
+    events.sort(key=lambda item: (item["date"], item["title"]))
+
     return templates.TemplateResponse(
         "calendar.html",
         {
             "request": request,
             "events": events,
+            "cases": legal_cases,
             "lawyers": lawyers,
             "selected_lawyer": selected_lawyer,
             "user": user,
+            "created_event": request.query_params.get("created_event") == "1",
         },
     )
+
+
+@app.post("/calendar/events/new")
+def create_calendar_event(
+    request: Request,
+    title: str = Form(...),
+    event_date: str = Form(...),
+    event_type: str = Form("CUSTOM"),
+    legal_case_id: str = Form(""),
+    lawyer_id: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    user = require_auth(request, db)
+    clean_title = title.strip()
+    event_day = parse_iso_date(event_date)
+    if not clean_title or not event_day:
+        redirect = "/calendar?error=event"
+        if lawyer_id.strip().isdigit():
+            redirect = f"{redirect}&lawyer_id={lawyer_id.strip()}"
+        return RedirectResponse(redirect, status_code=303)
+
+    case_id_value = None
+    raw_case_id = legal_case_id.strip()
+    if raw_case_id:
+        if not raw_case_id.isdigit():
+            redirect = "/calendar?error=case"
+            if lawyer_id.strip().isdigit():
+                redirect = f"{redirect}&lawyer_id={lawyer_id.strip()}"
+            return RedirectResponse(redirect, status_code=303)
+        case_id_value = int(raw_case_id)
+        if not db.get(LegalCase, case_id_value):
+            redirect = "/calendar?error=case"
+            if lawyer_id.strip().isdigit():
+                redirect = f"{redirect}&lawyer_id={lawyer_id.strip()}"
+            return RedirectResponse(redirect, status_code=303)
+
+    event_type_value = (event_type or "CUSTOM").strip().upper()
+    if event_type_value not in EVENT_TYPE_LABELS:
+        event_type_value = "CUSTOM"
+
+    db.add(
+        CalendarEvent(
+            title=clean_title,
+            starts_at=datetime.combine(event_day, datetime.min.time()),
+            event_type=event_type_value,
+            legal_case_id=case_id_value,
+        )
+    )
+    db.add(
+        Notification(
+            recipient_id=user.id,
+            title="Новое событие календаря",
+            message=f"{clean_title} ({event_day.strftime('%d.%m.%Y')})",
+        )
+    )
+    log_action(db, user, "Создано событие календаря", clean_title)
+    db.commit()
+
+    redirect = "/calendar?created_event=1"
+    if lawyer_id.strip().isdigit():
+        redirect = f"{redirect}&lawyer_id={lawyer_id.strip()}"
+    return RedirectResponse(redirect, status_code=303)
 
 
 @app.get("/cases/{case_id}/workspace")
@@ -918,7 +1170,11 @@ def kanban_page(request: Request, db: Session = Depends(get_db)):
 @app.get("/notifications", response_class=HTMLResponse)
 def notifications_page(request: Request, db: Session = Depends(get_db)):
     user = require_auth(request, db)
-    notifications = db.scalars(select(Notification).order_by(Notification.id.desc()).limit(100)).all()
+    notifications = db.scalars(
+        select(Notification)
+        .order_by(Notification.is_read.asc(), Notification.created_at.desc(), Notification.id.desc())
+        .limit(100)
+    ).all()
     unread = len([item for item in notifications if not item.is_read])
     return templates.TemplateResponse(
         "notifications.html",
@@ -934,6 +1190,9 @@ def mark_notification_read(notification_id: int, request: Request, db: Session =
         raise HTTPException(status_code=404, detail="Уведомление не найдено")
     notification.is_read = True
     db.commit()
+    if request.headers.get("x-requested-with") == "XMLHttpRequest":
+        unread = db.scalar(select(func.count(Notification.id)).where(Notification.is_read.is_(False))) or 0
+        return JSONResponse({"ok": True, "unread": unread})
     return RedirectResponse("/notifications", status_code=303)
 
 

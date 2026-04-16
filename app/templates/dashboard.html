@@ -29,12 +29,12 @@
   <div class="table-card">
     <h2>Последние уведомления</h2>
     <table>
-      <thead><tr><th>Событие</th><th>Описание</th></tr></thead>
+      <thead><tr><th>Событие</th><th>Описание</th><th>Дата</th></tr></thead>
       <tbody>
       {% for item in last_notifications %}
-        <tr><td>{{ item.title }}</td><td>{{ item.message }}</td></tr>
+        <tr><td>{{ item.title }}</td><td>{{ item.message }}</td><td>{{ item.created_at.strftime('%d.%m.%Y %H:%M') if item.created_at else '-' }}</td></tr>
       {% else %}
-        <tr><td colspan="2">Пока нет уведомлений.</td></tr>
+        <tr><td colspan="3">Пока нет уведомлений.</td></tr>
       {% endfor %}
       </tbody>
     </table>

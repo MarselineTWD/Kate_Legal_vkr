@@ -47,15 +47,15 @@
       <label class="span-3">Описание
         <textarea name="description" rows="3"></textarea>
       </label>
-      <div class="form-actions span-3">
+      <div class="form-actions form-actions-left span-3">
         <button type="submit" class="auth-action">Сохранить задачу</button>
       </div>
     </form>
   </div>
 
   <div class="table-card">
-    <table>
-      <thead><tr><th>Задача</th><th>Дело</th><th>Срок</th><th>Статус</th><th>Изменить</th></tr></thead>
+    <table class="tasks-table" data-resize-key="tasks">
+      <thead><tr><th>Задача</th><th>Дело</th><th>Срок</th><th>Статус</th><th class="is-column-locked" data-col-min-width="320">Изменить</th></tr></thead>
       <tbody>
       {% for t in tasks %}
       <tr data-status-row="task-{{ t.id }}">
@@ -64,7 +64,7 @@
         <td>{{ t.due_date.strftime('%d.%m.%Y') }}</td>
         <td data-status-label>{{ status_labels[t.status] }}</td>
         <td class="action-cell">
-          <form method="post" action="/tasks/{{ t.id }}/status" class="compact-form js-status-form" data-status-kind="task">
+          <form method="post" action="/tasks/{{ t.id }}/status" class="compact-form compact-form--locked js-status-form" data-status-kind="task">
             <select name="status">
               {% for status in statuses %}
               <option value="{{ status.value }}" {% if status == t.status %}selected{% endif %}>{{ status_labels[status] }}</option>

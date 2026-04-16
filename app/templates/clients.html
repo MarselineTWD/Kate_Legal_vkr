@@ -1,54 +1,145 @@
 {% extends "base.html" %}
 {% block title %}Клиенты{% endblock %}
 {% block content %}
-<section class="page">
+<section class="page clients-shell" data-clients-shell data-initial-chat-client-id="{{ initial_chat_client_id or '' }}">
   <h1>Клиенты</h1>
 
   {% if created %}<p class="success">Клиент успешно добавлен.</p>{% endif %}
 
-  <div class="table-card form-card">
-    <h2>Добавить клиента</h2>
-    <form method="post" action="/clients/new" class="inline-form grid-3">
-      <label>Название / ФИО
-        <input type="text" name="name" required />
-      </label>
-      <label>Тип
-        <select name="client_type">
-          <option value="ORGANIZATION">Организация</option>
-          <option value="PERSON">Физлицо</option>
-        </select>
-      </label>
-      <label>Email
-        <input type="email" name="email" />
-      </label>
-      <label>Телефон
-        <input type="text" name="phone" />
-      </label>
-      <label>Адрес
-        <input type="text" name="address" />
-      </label>
-      <label>Примечание
-        <input type="text" name="notes" />
-      </label>
-      <div class="form-actions form-actions-left span-3">
-        <button type="submit" class="auth-action">Сохранить клиента</button>
+  <div class="clients-directory" data-clients-directory>
+    <div class="table-card form-card">
+      <h2>Добавить клиента</h2>
+      <form method="post" action="/clients/new" class="inline-form grid-3">
+        <label>Название / ФИО
+          <input type="text" name="name" required />
+        </label>
+        <label>Тип
+          <select name="client_type">
+            <option value="ORGANIZATION">Организация</option>
+            <option value="PERSON">Физлицо</option>
+          </select>
+        </label>
+        <label>Email
+          <input type="email" name="email" />
+        </label>
+        <label>Телефон
+          <input type="text" name="phone" />
+        </label>
+        <label>Адрес
+          <input type="text" name="address" />
+        </label>
+        <label>Примечание
+          <input type="text" name="notes" />
+        </label>
+        <div class="form-actions form-actions-left span-3">
+          <button type="submit" class="auth-action">Сохранить клиента</button>
+        </div>
+      </form>
+    </div>
+
+    <form class="search"><input name="q" value="{{ q }}" placeholder="Поиск по названию клиента" /></form>
+
+    <div class="table-card">
+      <table class="clients-table" data-resize-key="clients">
+        <thead><tr><th>Название</th><th>Тип</th><th>Email</th><th>Телефон</th><th>Чат</th></tr></thead>
+        <tbody>
+        {% for c in clients %}
+        <tr>
+          <td>{{ c.name }}</td>
+          <td>{{ c.client_type }}</td>
+          <td>{{ c.email }}</td>
+          <td>{{ c.phone }}</td>
+          <td class="action-cell">
+            <button
+              type="button"
+              class="btn btn-light btn-chat-open"
+              data-client-chat-open
+              data-client-id="{{ c.id }}"
+              data-client-name="{{ c.name }}"
+            >
+              Открыть чат
+            </button>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5">Клиентов пока нет.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <section class="client-chat-page" data-client-chat-page hidden style="display:none;">
+    <div class="client-chat-page__header">
+      <button type="button" class="btn btn-light client-chat-page__back" data-client-chat-back>Назад к клиентам</button>
+      <div class="client-chat-page__heading">
+        <h2 id="client-chat-title">Чат с клиентом</h2>
+        <div class="client-chat-page__meta" id="client-chat-meta"></div>
       </div>
-    </form>
-  </div>
+    </div>
 
-  <form class="search"><input name="q" value="{{ q }}" placeholder="Поиск по названию клиента" /></form>
+    <div class="client-chat-page__grid">
+      <div class="client-chat-main">
+        <div class="client-chat-thread client-chat-thread--page" id="client-chat-thread">
+          <p class="workspace-list__empty">Выберите клиента, чтобы открыть чат.</p>
+        </div>
+        <form id="client-chat-form" class="client-chat-form client-chat-form--page">
+          <label>Сообщение
+            <textarea name="message" rows="5" placeholder="Введите сообщение"></textarea>
+          </label>
+          <label class="comment-form__toggle">
+            <input type="checkbox" name="is_from_client" value="true" />
+            Сообщение от клиента
+          </label>
+          <div class="modal__actions modal__actions--single">
+            <button type="submit" class="auth-action">Отправить</button>
+          </div>
+        </form>
+      </div>
 
-  <div class="table-card">
-    <table>
-      <thead><tr><th>Название</th><th>Тип</th><th>Email</th><th>Телефон</th></tr></thead>
-      <tbody>
-      {% for c in clients %}
-      <tr><td>{{ c.name }}</td><td>{{ c.client_type }}</td><td>{{ c.email }}</td><td>{{ c.phone }}</td></tr>
-      {% else %}
-      <tr><td colspan="4">Клиентов пока нет.</td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </div>
+      <aside class="client-chat-overview">
+        <h3>Карточка клиента</h3>
+        <div class="client-overview-kpis">
+          <article><span>Всего дел</span><strong id="overview-cases-total">0</strong></article>
+          <article><span>Активных дел</span><strong id="overview-cases-active">0</strong></article>
+          <article><span>Активных задач</span><strong id="overview-tasks-active">0</strong></article>
+          <article><span>Просрочено</span><strong id="overview-tasks-overdue">0</strong></article>
+          <article><span>Счетов</span><strong id="overview-invoices-total">0</strong></article>
+          <article><span>Не оплачено</span><strong id="overview-invoices-unpaid">0</strong></article>
+        </div>
+
+        <div class="workspace-card">
+          <div class="workspace-card__header"><h3>Контакты</h3></div>
+          <div class="workspace-meta">
+            <span class="workspace-meta__label">Адрес</span>
+            <strong id="overview-client-address">-</strong>
+            <span class="workspace-meta__label">Примечание</span>
+            <strong id="overview-client-notes">-</strong>
+          </div>
+        </div>
+
+        <div class="workspace-card">
+          <div class="workspace-card__header"><h3>Последние дела</h3></div>
+          <ul class="workspace-list" id="overview-recent-cases">
+            <li class="workspace-list__empty">Нет данных</li>
+          </ul>
+        </div>
+
+        <div class="workspace-card">
+          <div class="workspace-card__header"><h3>Ближайшие задачи</h3></div>
+          <ul class="workspace-list" id="overview-upcoming-tasks">
+            <li class="workspace-list__empty">Нет данных</li>
+          </ul>
+        </div>
+
+        <div class="workspace-card">
+          <div class="workspace-card__header"><h3>Последние счета</h3></div>
+          <ul class="workspace-list" id="overview-recent-invoices">
+            <li class="workspace-list__empty">Нет данных</li>
+          </ul>
+        </div>
+      </aside>
+    </div>
+  </section>
 </section>
 {% endblock %}

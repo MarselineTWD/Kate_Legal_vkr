@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Публичная заявка{% endblock %}
 {% block content %}
-<section class="page">
+<section class="page page--nav-offset">
   <h1>Публичная форма заявки</h1>
   <p class="subtitle">Оставьте обращение. Система создаст карточку клиента, дело и первичную задачу.</p>
 
@@ -27,7 +27,7 @@
       <label class="span-2">Описание проблемы
         <textarea name="message" rows="5" placeholder="Опишите ситуацию и приложите ключевые детали"></textarea>
       </label>
-      <div class="form-actions span-2">
+      <div class="form-actions form-actions-left span-2">
         <button type="submit" class="auth-action">Отправить заявку</button>
       </div>
     </form>

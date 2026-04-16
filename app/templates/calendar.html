@@ -3,6 +3,7 @@
 {% block content %}
 <section class="page">
   <h1>Календарь дедлайнов</h1>
+  {% if created_event %}<p class="success">Событие добавлено в календарь.</p>{% endif %}
   {% if selected_lawyer %}
   <p class="subtitle">Показаны задачи юриста: {{ selected_lawyer.full_name or selected_lawyer.username }}</p>
   {% else %}
@@ -23,6 +24,59 @@
   </form>
   {% endif %}
 
+  <div class="table-card form-card">
+    <h2>Добавить событие</h2>
+    <form method="post" action="/calendar/events/new" class="inline-form grid-3">
+      {% if selected_lawyer %}
+      <input type="hidden" name="lawyer_id" value="{{ selected_lawyer.id }}" />
+      {% endif %}
+      <label>Название события
+        <input type="text" name="title" placeholder="Например: заседание по делу" required />
+      </label>
+      <label>Дата
+        <input type="date" name="event_date" required />
+      </label>
+      <label>Тип события
+        <select name="event_type">
+          <option value="COURT">Судебное заседание</option>
+          <option value="MEETING">Встреча</option>
+          <option value="CLIENT">Коммуникация с клиентом</option>
+          <option value="DOCUMENT">Документы</option>
+          <option value="DEADLINE">Крайний срок</option>
+          <option value="CUSTOM">Другое</option>
+        </select>
+      </label>
+      <label class="span-3">Привязка к делу
+        <select name="legal_case_id">
+          <option value="">Без привязки к делу</option>
+          {% for legal_case in cases %}
+          <option value="{{ legal_case.id }}">{{ legal_case.case_number }} — {{ legal_case.title }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <div class="form-actions form-actions-left span-3">
+        <button type="submit" class="auth-action">Сохранить событие</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="calendar-toolbar">
+    <div class="calendar-nav" aria-label="Навигация по месяцам">
+      <button type="button" class="calendar-nav__button" id="calendar-prev-month">Назад</button>
+      <div class="calendar-nav__label" id="calendar-month-label" aria-live="polite"></div>
+      <button type="button" class="calendar-nav__button" id="calendar-next-month">Вперед</button>
+    </div>
+  </div>
+
+  <div class="calendar-weekdays" aria-hidden="true">
+    <span>Пн</span>
+    <span>Вт</span>
+    <span>Ср</span>
+    <span>Чт</span>
+    <span>Пт</span>
+    <span>Сб</span>
+    <span>Вс</span>
+  </div>
   <div id="calendar-grid" class="calendar-grid"></div>
 </section>
 {% endblock %}
