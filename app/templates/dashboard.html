@@ -1,40 +1,178 @@
-{% extends "base.html" %}
-{% block title %}Кабинет{% endblock %}
+﻿{% extends "base.html" %}
+{% block title %}РљР°Р±РёРЅРµС‚{% endblock %}
 {% block content %}
 <section class="page">
-  <h1>Рабочий кабинет</h1>
+  <h1>Р Р°Р±РѕС‡РёР№ РєР°Р±РёРЅРµС‚</h1>
 
   <div class="kpis">
-    <article><span>Всего дел</span><strong>{{ cases_count }}</strong></article>
-    <article><span>Активные дела</span><strong>{{ active_cases }}</strong></article>
-    <article><span>Клиенты</span><strong>{{ clients_count }}</strong></article>
-    <article><span>Активные задачи</span><strong>{{ tasks_todo }}</strong></article>
-    <article><span>Просрочки</span><strong>{{ overdue_tasks }}</strong></article>
+    <article><span>Р’СЃРµРіРѕ РґРµР»</span><strong>{{ cases_count }}</strong></article>
+    <article><span>РђРєС‚РёРІРЅС‹Рµ РґРµР»Р°</span><strong>{{ active_cases }}</strong></article>
+    <article><span>РљР»РёРµРЅС‚С‹</span><strong>{{ clients_count }}</strong></article>
+    <article><span>РђРєС‚РёРІРЅС‹Рµ Р·Р°РґР°С‡Рё</span><strong>{{ tasks_todo }}</strong></article>
+    <article><span>РџСЂРѕСЃСЂРѕС‡РєРё</span><strong>{{ overdue_tasks }}</strong></article>
+  </div>
+
+  {% if user.role.value == "ADMIN" %}
+  <div class="table-card form-card">
+    <h2>РЈРїСЂР°РІР»РµРЅРёРµ СЋСЂРёСЃС‚Р°РјРё</h2>
+    {% if intake_accepted %}
+      <p class="success">РћР±СЂР°С‰РµРЅРёРµ РїСЂРёРЅСЏС‚Рѕ Рё РЅР°Р·РЅР°С‡РµРЅРѕ СЋСЂРёСЃС‚Сѓ.</p>
+    {% endif %}
+    {% if lawyer_created %}
+      <p class="success">Р®СЂРёСЃС‚ СѓСЃРїРµС€РЅРѕ РґРѕР±Р°РІР»РµРЅ.</p>
+    {% elif lawyer_error == "invalid_last_name" %}
+      <p class="error">РќРµРєРѕСЂСЂРµРєС‚РЅР°СЏ С„Р°РјРёР»РёСЏ.</p>
+    {% elif lawyer_error == "invalid_first_name" %}
+      <p class="error">РќРµРєРѕСЂСЂРµРєС‚РЅРѕРµ РёРјСЏ.</p>
+    {% elif lawyer_error == "invalid_middle_name" %}
+      <p class="error">РќРµРєРѕСЂСЂРµРєС‚РЅРѕРµ РѕС‚С‡РµСЃС‚РІРѕ.</p>
+    {% elif lawyer_error == "invalid_phone" %}
+      <p class="error">РќРµРєРѕСЂСЂРµРєС‚РЅС‹Р№ С‚РµР»РµС„РѕРЅ.</p>
+    {% elif lawyer_error == "invalid_email" %}
+      <p class="error">РќРµРєРѕСЂСЂРµРєС‚РЅС‹Р№ email.</p>
+    {% elif lawyer_error == "email_exists" %}
+      <p class="error">РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ СЃ С‚Р°РєРёРј email СѓР¶Рµ СЃСѓС‰РµСЃС‚РІСѓРµС‚.</p>
+    {% elif lawyer_error == "short_password" %}
+      <p class="error">РџР°СЂРѕР»СЊ РґРѕР»Р¶РµРЅ СЃРѕРґРµСЂР¶Р°С‚СЊ РјРёРЅРёРјСѓРј 8 СЃРёРјРІРѕР»РѕРІ.</p>
+    {% elif lawyer_error == "weak_password" %}
+      <p class="error">РџР°СЂРѕР»СЊ РґРѕР»Р¶РµРЅ СЃРѕРґРµСЂР¶Р°С‚СЊ Р±СѓРєРІС‹ РІРµСЂС…РЅРµРіРѕ/РЅРёР¶РЅРµРіРѕ СЂРµРіРёСЃС‚СЂР° Рё С†РёС„СЂСѓ.</p>
+    {% elif lawyer_error == "password_mismatch" %}
+      <p class="error">РџР°СЂРѕР»Рё РЅРµ СЃРѕРІРїР°РґР°СЋС‚.</p>
+    {% endif %}
+
+    <form method="post" action="/admin/lawyers/new" class="inline-form grid-3">
+      <label>Р¤Р°РјРёР»РёСЏ
+        <input type="text" name="last_name" required />
+      </label>
+      <label>РРјСЏ
+        <input type="text" name="first_name" required />
+      </label>
+      <label>РћС‚С‡РµСЃС‚РІРѕ
+        <input type="text" name="middle_name" />
+      </label>
+      <label>Email
+        <input type="email" name="email" required />
+      </label>
+      <label>РўРµР»РµС„РѕРЅ
+        <input type="text" name="phone" />
+      </label>
+      <label>РЎРїРµС†РёР°Р»РёР·Р°С†РёСЏ
+        <input type="text" name="specialization" />
+      </label>
+      <label>РџР°СЂРѕР»СЊ
+        <input type="password" name="password" minlength="8" required />
+      </label>
+      <label>РџРѕРІС‚РѕСЂРёС‚Рµ РїР°СЂРѕР»СЊ
+        <input type="password" name="password_confirm" minlength="8" required />
+      </label>
+      <div class="form-actions form-actions-left span-3">
+        <button type="submit" class="auth-action">Р”РѕР±Р°РІРёС‚СЊ СЋСЂРёСЃС‚Р°</button>
+      </div>
+    </form>
   </div>
 
   <div class="table-card">
-    <h2>Ближайшие задачи</h2>
+    <h2>РЎРїРёСЃРѕРє СЋСЂРёСЃС‚РѕРІ</h2>
     <table>
-      <thead><tr><th>Задача</th><th>Срок</th><th>Статус</th></tr></thead>
+      <thead><tr><th>Р¤РРћ</th><th>Email</th><th>РўРµР»РµС„РѕРЅ</th><th>РЎРїРµС†РёР°Р»РёР·Р°С†РёСЏ</th></tr></thead>
       <tbody>
-      {% for t in recent_tasks %}
-        <tr><td>{{ t.title }}</td><td>{{ t.due_date.strftime('%d.%m.%Y') }}</td><td>{{ status_labels[t.status] }}</td></tr>
+      {% for lawyer in lawyers %}
+        <tr>
+          <td>{{ lawyer.full_name or lawyer.username }}</td>
+          <td>{{ lawyer.email or '-' }}</td>
+          <td>{{ lawyer.phone or '-' }}</td>
+          <td>{{ lawyer.specialization or '-' }}</td>
+        </tr>
       {% else %}
-        <tr><td colspan="3">Задач пока нет. Создайте первую задачу в модуле «Задачи».</td></tr>
+        <tr><td colspan="4">Р®СЂРёСЃС‚С‹ РїРѕРєР° РЅРµ РґРѕР±Р°РІР»РµРЅС‹.</td></tr>
       {% endfor %}
       </tbody>
     </table>
   </div>
 
   <div class="table-card">
-    <h2>Последние уведомления</h2>
+    <h2>РќРѕРІС‹Рµ РѕР±СЂР°С‰РµРЅРёСЏ РєР»РёРµРЅС‚РѕРІ</h2>
     <table>
-      <thead><tr><th>Событие</th><th>Описание</th><th>Дата</th></tr></thead>
+      <thead><tr><th>РќРѕРјРµСЂ</th><th>РљР»РёРµРЅС‚</th><th>РўРµРјР°</th><th>РљР°С‚РµРіРѕСЂРёСЏ</th><th>Description</th><th>TOPSIS (СЂРµРєРѕРјРµРЅРґР°С†РёРё)</th><th>РџСЂРёРЅСЏС‚СЊ</th></tr></thead>
+      <tbody>
+      {% for row in pending_intakes %}
+        {% set c = row.case %}
+        <tr>
+          <td>{{ c.case_number }}</td>
+          <td>{{ c.client.name if c.client else '-' }}</td>
+          <td>{{ c.title }}</td>
+          <td>{{ c.category }}</td>
+          <td>
+            {{ (c.description or '-')[:180] }}{% if c.description and (c.description|length) > 180 %}...{% endif %}<br>
+            <a href="/cases/{{ c.id }}/workspace">Open case card</a>
+          </td>
+          <td>
+            {% for rec in row.recommendations %}
+              {{ rec.user.full_name or rec.user.username }} ({{ '%.4f'|format(rec.score) }}){% if not loop.last %}<br>{% endif %}
+            {% else %}
+              РќРµС‚ СЂРµРєРѕРјРµРЅРґР°С†РёР№
+            {% endfor %}
+          </td>
+          <td>
+            <form method="post" action="/admin/intake/{{ c.id }}/accept" class="compact-form compact-form-column">
+              <select name="responsible_lawyer_id" required>
+                <option value="">Р’С‹Р±РµСЂРёС‚Рµ СЋСЂРёСЃС‚Р°</option>
+                {% for lawyer in lawyers %}
+                <option value="{{ lawyer.id }}">{{ lawyer.full_name or lawyer.username }}</option>
+                {% endfor %}
+              </select>
+              <select name="priority" required>
+                <option value="LOW">Низкий приоритет</option>
+                <option value="MEDIUM" selected>Средний приоритет</option>
+                <option value="HIGH">Высокий приоритет</option>
+              </select>
+              <button type="submit">РџСЂРёРЅСЏС‚СЊ РѕР±СЂР°С‰РµРЅРёРµ</button>
+            </form>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td colspan="7">РќРѕРІС‹С… РѕР±СЂР°С‰РµРЅРёР№ РїРѕРєР° РЅРµС‚.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+  <div class="table-card">
+    <h2>Р‘Р»РёР¶Р°Р№С€РёРµ Р·Р°РґР°С‡Рё</h2>
+    <table>
+      <thead><tr><th>Р—Р°РґР°С‡Р°</th><th>РЎСЂРѕРє</th><th>РЎС‚Р°С‚СѓСЃ</th></tr></thead>
+      <tbody>
+      {% for t in recent_tasks %}
+        {% set deadline_level = '' %}
+        {% if t.status.value != "DONE" %}
+          {% set days_left = (t.due_date - today).days %}
+          {% if days_left < 0 or (days_left >= 1 and days_left <= 3) %}
+            {% set deadline_level = 'urgent' %}
+          {% elif days_left >= 4 and days_left <= 7 %}
+            {% set deadline_level = 'warning' %}
+          {% endif %}
+        {% endif %}
+        <tr class="{% if deadline_level %}deadline-{{ deadline_level }}{% endif %}">
+          <td>{{ t.title }}</td>
+          <td class="{% if deadline_level %}deadline-date-{{ deadline_level }}{% endif %}">{{ t.due_date.strftime('%d.%m.%Y') }}</td>
+          <td>{{ status_labels[t.status] }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="3">Р—Р°РґР°С‡ РїРѕРєР° РЅРµС‚. РЎРѕР·РґР°Р№С‚Рµ РїРµСЂРІСѓСЋ Р·Р°РґР°С‡Сѓ РІ РјРѕРґСѓР»Рµ В«Р—Р°РґР°С‡РёВ».</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="table-card">
+    <h2>РџРѕСЃР»РµРґРЅРёРµ СѓРІРµРґРѕРјР»РµРЅРёСЏ</h2>
+    <table>
+      <thead><tr><th>РЎРѕР±С‹С‚РёРµ</th><th>РћРїРёСЃР°РЅРёРµ</th><th>Р”Р°С‚Р°</th></tr></thead>
       <tbody>
       {% for item in last_notifications %}
         <tr><td>{{ item.title }}</td><td>{{ item.message }}</td><td>{{ item.created_at.strftime('%d.%m.%Y %H:%M') if item.created_at else '-' }}</td></tr>
       {% else %}
-        <tr><td colspan="3">Пока нет уведомлений.</td></tr>
+        <tr><td colspan="3">РџРѕРєР° РЅРµС‚ СѓРІРµРґРѕРјР»РµРЅРёР№.</td></tr>
       {% endfor %}
       </tbody>
     </table>

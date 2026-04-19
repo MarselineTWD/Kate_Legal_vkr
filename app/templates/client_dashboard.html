@@ -1,0 +1,230 @@
+{% extends "base.html" %}
+{% block title %}Кабинет клиента{% endblock %}
+{% block content %}
+<section class="portal-page portal-dashboard">
+  <div class="dashboard-hero">
+    <div class="dashboard-hero__main portal-card portal-card--hero">
+      <div class="portal-card__eyebrow">Главная / клиентский кабинет</div>
+      <h1 class="portal-page__title">Здравствуйте, {{ client.name if client else user.full_name }}</h1>
+      <p class="portal-page__intro">
+        В данном разделе доступна актуальная информация по обращениям, срокам, документам и взаимодействию с юридической командой.
+      </p>
+      <div class="portal-actions">
+        <a href="/client/intake" class="portal-button portal-button--primary">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-plus-square"></use></svg>
+          <span>Подать обращение</span>
+        </a>
+        <a href="/client/cases" class="portal-button portal-button--secondary">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-briefcase"></use></svg>
+          <span>Перейти к делам</span>
+        </a>
+      </div>
+    </div>
+
+    <aside class="portal-card portal-card--accent dashboard-hero__aside">
+      <div class="portal-card__eyebrow">Требует внимания</div>
+      <div class="dashboard-hero__summary">
+        <div>
+          <strong>{{ overdue_tasks }}</strong>
+          <span>просроченных задач</span>
+        </div>
+        <div>
+          <strong>{{ unread_notifications }}</strong>
+          <span>новых уведомлений</span>
+        </div>
+      </div>
+      {% set attention_state = namespace(admin_review_count=None, has_other_items=false) %}
+      {% for item in attention_items %}
+        {% if item.startswith('На проверке администратора:') %}
+          {% set attention_state.admin_review_count = item.split(':', 1)[1].strip() %}
+        {% else %}
+          {% set attention_state.has_other_items = true %}
+        {% endif %}
+      {% endfor %}
+
+      {% if attention_state.admin_review_count %}
+      <div class="dashboard-hero__compact-note">
+        <span class="dashboard-hero__compact-label">На проверке администратором</span>
+        <strong>{{ attention_state.admin_review_count }}</strong>
+      </div>
+      {% endif %}
+
+      {% if attention_state.has_other_items %}
+      <ul class="portal-bullet-list">
+        {% for item in attention_items %}
+        {% if not item.startswith('На проверке администратора:') %}
+        <li>{{ item }}</li>
+        {% endif %}
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </aside>
+  </div>
+
+  <div class="portal-stats-grid">
+    <article class="stat-card">
+      <div class="stat-card__icon stat-card__icon--brand">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-plus-square"></use></svg>
+      </div>
+      <div class="stat-card__content">
+        <span>Обращения</span>
+        <strong>{{ cases_count }}</strong>
+        <small>Все запросы в кабинете</small>
+      </div>
+    </article>
+
+    <article class="stat-card">
+      <div class="stat-card__icon stat-card__icon--navy">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-briefcase"></use></svg>
+      </div>
+      <div class="stat-card__content">
+        <span>Активные дела</span>
+        <strong>{{ active_cases }}</strong>
+        <small>В работе у юридической команды</small>
+      </div>
+    </article>
+
+    <article class="stat-card">
+      <div class="stat-card__icon stat-card__icon--warning">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-calendar"></use></svg>
+      </div>
+      <div class="stat-card__content">
+        <span>Ближайшие события</span>
+        <strong>{{ upcoming_events|length }}</strong>
+        <small>Запланированные сроки и встречи</small>
+      </div>
+    </article>
+
+    <article class="stat-card">
+      <div class="stat-card__icon stat-card__icon--info">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-bell"></use></svg>
+      </div>
+      <div class="stat-card__content">
+        <span>Уведомления</span>
+        <strong>{{ unread_notifications }}</strong>
+        <small>Новых событий в системе</small>
+      </div>
+    </article>
+  </div>
+
+  <div class="portal-grid portal-grid--dashboard">
+    <article class="portal-card portal-card--panel portal-card--span-2">
+      <div class="portal-card__head">
+        <div>
+          <div class="portal-card__eyebrow">Мои дела</div>
+          <h2 class="portal-card__title">Текущий статус обращений</h2>
+        </div>
+        <a href="/client/cases" class="portal-inline-link">
+          <span>Все дела</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-arrow-right"></use></svg>
+        </a>
+      </div>
+
+      <div class="case-list">
+        {% for c in my_cases %}
+          {% set deadline_days = (c.deadline - today).days if c.deadline else None %}
+          {% if not c.intake_approved %}
+            {% set status_class = 'status-badge--warning' %}
+            {% set status_label = 'На проверке' %}
+          {% elif c.stage.value == 'COMPLETED' %}
+            {% set status_class = 'status-badge--success' %}
+            {% set status_label = stage_labels[c.stage] %}
+          {% elif c.stage.value == 'COURT' %}
+            {% set status_class = 'status-badge--danger' %}
+            {% set status_label = stage_labels[c.stage] %}
+          {% else %}
+            {% set status_class = 'status-badge--brand' %}
+            {% set status_label = stage_labels[c.stage] %}
+          {% endif %}
+        <article class="case-row">
+          <div class="case-row__main">
+            <div class="case-row__meta">
+              <span class="case-row__number">{{ c.case_number }}</span>
+              <span class="status-badge {{ status_class }}">{{ status_label }}</span>
+            </div>
+            <h3>{{ c.title }}</h3>
+            <p>
+              {% if c.responsible_lawyer %}
+                Ответственный юрист: {{ c.responsible_lawyer.full_name or c.responsible_lawyer.username }}
+              {% else %}
+                Юрист будет назначен после принятия обращения в работу.
+              {% endif %}
+            </p>
+          </div>
+          <div class="case-row__side">
+            <div class="case-row__deadline{% if deadline_days is not none and deadline_days < 0 %} is-danger{% elif deadline_days is not none and deadline_days <= 3 %} is-warning{% endif %}">
+              <span>Дедлайн</span>
+              <strong>{{ c.deadline.strftime('%d.%m.%Y') if c.deadline else 'Не назначен' }}</strong>
+            </div>
+            <div class="case-row__actions">
+              <a href="/client/chat?case_id={{ c.id }}" class="portal-button portal-button--tertiary">Чат</a>
+              <a href="/client/documents?case_id={{ c.id }}" class="portal-button portal-button--ghost">Документы</a>
+            </div>
+          </div>
+        </article>
+        {% else %}
+        <div class="portal-empty">
+          <div class="portal-empty__icon">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-briefcase"></use></svg>
+          </div>
+          <h3>Пока нет обращений</h3>
+          <p>Создайте первое обращение, и мы сразу включим его в рабочий процесс.</p>
+          <a href="/client/intake" class="portal-button portal-button--primary">Подать обращение</a>
+        </div>
+        {% endfor %}
+      </div>
+    </article>
+
+    <article class="portal-card portal-card--panel">
+      <div class="portal-card__head">
+        <div>
+          <div class="portal-card__eyebrow">События и дедлайны</div>
+          <h2 class="portal-card__title">Ближайшие сроки</h2>
+        </div>
+        <a href="/client/calendar" class="portal-inline-link">
+          <span>Календарь</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-arrow-right"></use></svg>
+        </a>
+      </div>
+
+      <div class="timeline-compact">
+        {% for item in upcoming_events[:5] %}
+          {% set offset = (item.date - today).days %}
+        <article class="timeline-compact__item{% if offset < 0 %} is-danger{% elif offset <= 3 %} is-warning{% endif %}">
+          <div class="timeline-compact__date">
+            <strong>{{ item.date.strftime('%d') }}</strong>
+            <span>{{ item.date.strftime('%b') }}</span>
+          </div>
+          <div class="timeline-compact__content">
+            <div class="timeline-compact__top">
+              <span class="status-badge {% if item.kind == 'TASK' %}status-badge--info{% else %}status-badge--surface{% endif %}">
+                {{ 'Срок' if item.kind == 'TASK' else 'Событие' }}
+              </span>
+              <small>
+                {% if offset < 0 %}
+                  Просрочено
+                {% elif offset == 0 %}
+                  Сегодня
+                {% elif offset == 1 %}
+                  Завтра
+                {% else %}
+                  Через {{ offset }} дн.
+                {% endif %}
+              </small>
+            </div>
+            <h3>{{ item.title }}</h3>
+            <p>{{ item.status }}</p>
+          </div>
+        </article>
+        {% else %}
+        <div class="portal-empty portal-empty--compact">
+          <h3>Нет ближайших событий</h3>
+          <p>Новые сроки и встречи появятся здесь автоматически.</p>
+        </div>
+        {% endfor %}
+      </div>
+    </article>
+
+  </div>
+</section>
+{% endblock %}

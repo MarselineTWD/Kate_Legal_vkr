@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Просмотр документа{% endblock %}
+{% block content %}
+<section class="portal-page">
+  <div class="portal-page__header">
+    <div>
+      <div class="portal-page__eyebrow">Документы</div>
+      <h1 class="portal-page__title">Просмотр файла</h1>
+      <p class="portal-page__intro">{{ preview_title }}</p>
+    </div>
+  </div>
+
+  <article class="portal-card portal-card--panel">
+    <div class="portal-card__head">
+      <div>
+        <div class="portal-card__eyebrow">Предпросмотр</div>
+        <h2 class="portal-card__title">{{ preview_title }}</h2>
+      </div>
+      <div class="portal-actions">
+        <a href="/client/documents" class="portal-button portal-button--secondary">К списку документов</a>
+        <a href="/client/documents/{{ document.id }}/download" class="portal-button portal-button--ghost">Скачать</a>
+      </div>
+    </div>
+
+    {% if preview_supported %}
+      <pre class="portal-code-preview">{{ preview_text }}</pre>
+    {% else %}
+      <div class="portal-empty">
+        <h3>Предпросмотр для этого формата пока недоступен</h3>
+        <p>Вы можете скачать файл и открыть его в локальном приложении.</p>
+      </div>
+    {% endif %}
+  </article>
+</section>
+{% endblock %}

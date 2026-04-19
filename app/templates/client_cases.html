@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+{% block title %}Мои дела{% endblock %}
+{% block content %}
+<section class="portal-page">
+  <div class="portal-page__header">
+    <div>
+      <div class="portal-page__eyebrow">Мои обращения и дела</div>
+      <h1 class="portal-page__title">Прогресс по каждому запросу</h1>
+      <p class="portal-page__intro">
+        Отслеживайте статус дел, ближайшие дедлайны, активность по задачам и переходите к нужному действию без поиска по таблицам.
+      </p>
+    </div>
+    <div class="portal-actions">
+      <a href="/client/intake" class="portal-button portal-button--primary">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-plus-square"></use></svg>
+        <span>Новое обращение</span>
+      </a>
+    </div>
+  </div>
+
+  <article class="portal-card portal-card--panel">
+    <div class="portal-card__head portal-card__head--stacked">
+      <div>
+        <div class="portal-card__eyebrow">Фильтры</div>
+        <h2 class="portal-card__title">Список обращений</h2>
+      </div>
+      <div class="portal-filter-chips" data-filter-group data-filter-default="all">
+        <button type="button" class="portal-filter-chip is-active" data-filter-button="all">Все</button>
+        <button type="button" class="portal-filter-chip" data-filter-button="active">В работе</button>
+        <button type="button" class="portal-filter-chip" data-filter-button="pending">На проверке</button>
+        <button type="button" class="portal-filter-chip" data-filter-button="urgent">Срочные</button>
+        <button type="button" class="portal-filter-chip" data-filter-button="completed">Завершённые</button>
+      </div>
+    </div>
+  </article>
+
+    <div class="case-records case-records--separate">
+      {% for c in cases %}
+        {% set stats = task_stats.get(c.id, {'total': 0, 'done': 0, 'overdue': 0, 'next_due': None}) %}
+        {% set deadline_days = (c.deadline - today).days if c.deadline else None %}
+        {% set filter_tags = 'all ' %}
+        {% if not c.intake_approved %}
+          {% set status_class = 'status-badge--warning' %}
+          {% set status_label = 'На проверке' %}
+          {% set progress = 12 %}
+          {% set filter_tags = filter_tags + 'pending ' %}
+        {% elif c.stage.value == 'COMPLETED' %}
+          {% set status_class = 'status-badge--success' %}
+          {% set status_label = stage_labels[c.stage] %}
+          {% set progress = 100 %}
+          {% set filter_tags = filter_tags + 'completed ' %}
+        {% elif c.stage.value == 'NEW_REQUEST' %}
+          {% set status_class = 'status-badge--info' %}
+          {% set status_label = stage_labels[c.stage] %}
+          {% set progress = 24 %}
+          {% set filter_tags = filter_tags + 'active ' %}
+        {% elif c.stage.value == 'DOC_ANALYSIS' %}
+          {% set status_class = 'status-badge--brand' %}
+          {% set status_label = stage_labels[c.stage] %}
+          {% set progress = 46 %}
+          {% set filter_tags = filter_tags + 'active ' %}
+        {% elif c.stage.value == 'DOC_PREPARATION' %}
+          {% set status_class = 'status-badge--brand' %}
+          {% set status_label = stage_labels[c.stage] %}
+          {% set progress = 68 %}
+          {% set filter_tags = filter_tags + 'active ' %}
+        {% else %}
+          {% set status_class = 'status-badge--danger' %}
+          {% set status_label = stage_labels[c.stage] %}
+          {% set progress = 84 %}
+          {% set filter_tags = filter_tags + 'active ' %}
+        {% endif %}
+        {% if deadline_days is not none and deadline_days <= 3 and c.stage.value != 'COMPLETED' %}
+          {% set filter_tags = filter_tags + 'urgent ' %}
+        {% endif %}
+
+      <article class="portal-card portal-card--panel case-record" data-filter-item data-filter-tags="{{ filter_tags|trim }}">
+        <div class="case-record__header">
+          <div>
+            <div class="case-record__eyebrow">{{ c.case_number }}</div>
+            <h3>{{ c.title }}</h3>
+          </div>
+          <span class="status-badge {{ status_class }}">{{ status_label }}</span>
+        </div>
+
+        <div class="case-record__progress">
+          <div class="case-record__progress-top">
+            <span>Прогресс по стадии</span>
+            <strong>{{ progress }}%</strong>
+          </div>
+          <div class="progress-bar">
+            <span style="width: {{ progress }}%"></span>
+          </div>
+        </div>
+
+        <div class="case-record__grid">
+          <div class="metric-chip">
+            <span>Юрист</span>
+            <strong>{{ c.responsible_lawyer.full_name or c.responsible_lawyer.username if c.responsible_lawyer else 'Назначается' }}</strong>
+          </div>
+          <div class="metric-chip{% if deadline_days is not none and deadline_days < 0 %} metric-chip--danger{% elif deadline_days is not none and deadline_days <= 3 %} metric-chip--warning{% endif %}">
+            <span>Дедлайн</span>
+            <strong>{{ c.deadline.strftime('%d.%m.%Y') if c.deadline else 'Не назначен' }}</strong>
+          </div>
+          <div class="metric-chip">
+            <span>Задачи</span>
+            <strong>{{ stats.done }}/{{ stats.total }}</strong>
+          </div>
+          <div class="metric-chip{% if stats.overdue %} metric-chip--warning{% endif %}">
+            <span>Просрочено</span>
+            <strong>{{ stats.overdue }}</strong>
+          </div>
+          <div class="metric-chip">
+            <span>Документы</span>
+            <strong>{{ document_counts.get(c.id, 0) }}</strong>
+          </div>
+          {% set chat = chat_state.get(c.id) %}
+          <div class="metric-chip{% if chat and chat.has_unread %} metric-chip--brand{% endif %}">
+            <span>Сообщения</span>
+            <strong>{% if chat %}{{ chat.unread_count }} непрочит.{% else %}0 непрочит.{% endif %}</strong>
+          </div>
+        </div>
+
+        <div class="case-record__footer">
+          <div class="case-record__hint">
+            {% if stats.next_due %}
+              Следующая активная задача до {{ stats.next_due.strftime('%d.%m.%Y') }}
+            {% elif c.stage.value == 'COMPLETED' %}
+              Дело завершено и доступно для просмотра в архивном статусе.
+            {% elif not c.intake_approved %}
+              Обращение ожидает проверки администратором.
+            {% else %}
+              Юридическая команда продолжает работу по делу.
+            {% endif %}
+          </div>
+          <div class="case-record__actions">
+            <a href="/client/cases/{{ c.id }}" class="portal-button portal-button--tertiary">Открыть дело</a>
+            <a href="/client/documents?case_id={{ c.id }}" class="portal-button portal-button--ghost">Документы</a>
+          </div>
+        </div>
+      </article>
+      {% else %}
+      <div class="portal-empty">
+        <div class="portal-empty__icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-briefcase"></use></svg>
+        </div>
+        <h3>У вас пока нет дел</h3>
+        <p>Когда вы подадите первое обращение, здесь появится удобная карточка со статусом, дедлайнами и действиями.</p>
+        <a href="/client/intake" class="portal-button portal-button--primary">Подать обращение</a>
+      </div>
+      {% endfor %}
+    </div>
+</section>
+{% endblock %}

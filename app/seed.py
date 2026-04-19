@@ -13,8 +13,39 @@ from .security import hash_password
 
 def create_schema() -> None:
     Base.metadata.create_all(bind=engine)
+    _ensure_user_role_enum_values()
     _ensure_user_registration_columns()
+    _ensure_legal_case_intake_column()
+    _ensure_legal_case_created_at_column()
+    _ensure_client_profile_columns()
+    _ensure_client_chat_columns()
+    _ensure_case_document_storage_columns()
     _ensure_notification_timestamp_column()
+
+
+def _ensure_user_role_enum_values() -> None:
+    with engine.begin() as conn:
+        if conn.dialect.name != "postgresql":
+            return
+        conn.execute(
+            text(
+                """
+                DO $$
+                BEGIN
+                    IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'role')
+                    AND NOT EXISTS (
+                        SELECT 1
+                        FROM pg_type t
+                        JOIN pg_enum e ON e.enumtypid = t.oid
+                        WHERE t.typname = 'role' AND e.enumlabel = 'CLIENT'
+                    )
+                    THEN
+                        ALTER TYPE role ADD VALUE 'CLIENT';
+                    END IF;
+                END $$;
+                """
+            )
+        )
 
 
 def _ensure_user_registration_columns() -> None:
@@ -88,6 +119,212 @@ def _ensure_notification_timestamp_column() -> None:
         if "created_at" not in existing:
             conn.execute(text("ALTER TABLE notifications ADD COLUMN created_at TIMESTAMP"))
         conn.execute(text("UPDATE notifications SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL"))
+
+
+def _ensure_client_profile_columns() -> None:
+    required_columns = {
+        "user_id": "INTEGER",
+        "inn": "TEXT DEFAULT ''",
+        "ogrn": "TEXT DEFAULT ''",
+        "bank_details": "TEXT DEFAULT ''",
+        "passport_details": "TEXT DEFAULT ''",
+        "other_details": "TEXT DEFAULT ''",
+        "requisites": "TEXT DEFAULT ''",
+    }
+
+    with engine.begin() as conn:
+        dialect = conn.dialect.name
+        if dialect == "sqlite":
+            existing = {
+                row[1]
+                for row in conn.execute(text("PRAGMA table_info(clients)")).fetchall()
+            }
+            for column_name, sql_type in required_columns.items():
+                if column_name not in existing:
+                    conn.execute(text(f"ALTER TABLE clients ADD COLUMN {column_name} {sql_type}"))
+            return
+
+        if dialect == "postgresql":
+            for column_name, sql_type in required_columns.items():
+                conn.execute(text(f"ALTER TABLE clients ADD COLUMN IF NOT EXISTS {column_name} {sql_type}"))
+            conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ux_clients_user_id ON clients (user_id)"))
+            return
+
+        existing = {
+            row[0]
+            for row in conn.execute(
+                text(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_name = 'clients'"
+                )
+            ).fetchall()
+        }
+        for column_name, sql_type in required_columns.items():
+            if column_name not in existing:
+                conn.execute(text(f"ALTER TABLE clients ADD COLUMN {column_name} {sql_type}"))
+
+
+def _ensure_client_chat_columns() -> None:
+    with engine.begin() as conn:
+        dialect = conn.dialect.name
+
+        if dialect == "sqlite":
+            existing = {
+                row[1]
+                for row in conn.execute(text("PRAGMA table_info(client_chat_messages)")).fetchall()
+            }
+            if "legal_case_id" not in existing:
+                conn.execute(text("ALTER TABLE client_chat_messages ADD COLUMN legal_case_id INTEGER"))
+            return
+
+        if dialect == "postgresql":
+            conn.execute(text("ALTER TABLE client_chat_messages ADD COLUMN IF NOT EXISTS legal_case_id INTEGER"))
+            return
+
+        existing = {
+            row[0]
+            for row in conn.execute(
+                text(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_name = 'client_chat_messages'"
+                )
+            ).fetchall()
+        }
+        if "legal_case_id" not in existing:
+            conn.execute(text("ALTER TABLE client_chat_messages ADD COLUMN legal_case_id INTEGER"))
+
+
+def _ensure_legal_case_intake_column() -> None:
+    with engine.begin() as conn:
+        dialect = conn.dialect.name
+        if dialect == "sqlite":
+            existing = {
+                row[1]
+                for row in conn.execute(text("PRAGMA table_info(legal_cases)")).fetchall()
+            }
+            if "intake_approved" not in existing:
+                conn.execute(text("ALTER TABLE legal_cases ADD COLUMN intake_approved BOOLEAN DEFAULT 1"))
+            conn.execute(text("UPDATE legal_cases SET intake_approved = 1 WHERE intake_approved IS NULL"))
+            return
+
+        if dialect == "postgresql":
+            conn.execute(text("ALTER TABLE legal_cases ADD COLUMN IF NOT EXISTS intake_approved BOOLEAN DEFAULT TRUE"))
+            conn.execute(text("UPDATE legal_cases SET intake_approved = TRUE WHERE intake_approved IS NULL"))
+            return
+
+        existing = {
+            row[0]
+            for row in conn.execute(
+                text(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_name = 'legal_cases'"
+                )
+            ).fetchall()
+        }
+        if "intake_approved" not in existing:
+            conn.execute(text("ALTER TABLE legal_cases ADD COLUMN intake_approved BOOLEAN DEFAULT TRUE"))
+        conn.execute(text("UPDATE legal_cases SET intake_approved = TRUE WHERE intake_approved IS NULL"))
+
+
+def _ensure_legal_case_created_at_column() -> None:
+    with engine.begin() as conn:
+        dialect = conn.dialect.name
+        if dialect == "sqlite":
+            existing = {
+                row[1]
+                for row in conn.execute(text("PRAGMA table_info(legal_cases)")).fetchall()
+            }
+            if "created_at" not in existing:
+                conn.execute(text("ALTER TABLE legal_cases ADD COLUMN created_at DATETIME"))
+            conn.execute(
+                text(
+                    """
+                    UPDATE legal_cases
+                    SET created_at = COALESCE(
+                        (SELECT MIN(created_at) FROM case_documents d WHERE d.legal_case_id = legal_cases.id),
+                        (SELECT MIN(created_at) FROM client_chat_messages m WHERE m.legal_case_id = legal_cases.id),
+                        (SELECT MIN(created_at) FROM case_comments c WHERE c.legal_case_id = legal_cases.id),
+                        (SELECT MIN(starts_at) FROM calendar_events e WHERE e.legal_case_id = legal_cases.id),
+                        datetime(opened_at || ' 00:00:00'),
+                        CURRENT_TIMESTAMP
+                    )
+                    WHERE created_at IS NULL
+                    """
+                )
+            )
+            return
+
+        if dialect == "postgresql":
+            conn.execute(text("ALTER TABLE legal_cases ADD COLUMN IF NOT EXISTS created_at TIMESTAMP"))
+            conn.execute(
+                text(
+                    """
+                    UPDATE legal_cases lc
+                    SET created_at = COALESCE(
+                        (SELECT MIN(d.created_at) FROM case_documents d WHERE d.legal_case_id = lc.id),
+                        (SELECT MIN(m.created_at) FROM client_chat_messages m WHERE m.legal_case_id = lc.id),
+                        (SELECT MIN(c.created_at) FROM case_comments c WHERE c.legal_case_id = lc.id),
+                        (SELECT MIN(e.starts_at) FROM calendar_events e WHERE e.legal_case_id = lc.id),
+                        (lc.opened_at::timestamp),
+                        NOW()
+                    )
+                    WHERE lc.created_at IS NULL
+                    """
+                )
+            )
+            return
+
+        existing = {
+            row[0]
+            for row in conn.execute(
+                text(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_name = 'legal_cases'"
+                )
+            ).fetchall()
+        }
+        if "created_at" not in existing:
+            conn.execute(text("ALTER TABLE legal_cases ADD COLUMN created_at TIMESTAMP"))
+        conn.execute(text("UPDATE legal_cases SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL"))
+
+
+def _ensure_case_document_storage_columns() -> None:
+    required_columns = {
+        "mime_type": "TEXT DEFAULT ''",
+        "file_size": "INTEGER DEFAULT 0",
+        "file_content": "BLOB",
+    }
+
+    with engine.begin() as conn:
+        dialect = conn.dialect.name
+        if dialect == "sqlite":
+            existing = {
+                row[1]
+                for row in conn.execute(text("PRAGMA table_info(case_documents)")).fetchall()
+            }
+            for column_name, sql_type in required_columns.items():
+                if column_name not in existing:
+                    conn.execute(text(f"ALTER TABLE case_documents ADD COLUMN {column_name} {sql_type}"))
+            return
+
+        if dialect == "postgresql":
+            conn.execute(text("ALTER TABLE case_documents ADD COLUMN IF NOT EXISTS mime_type TEXT DEFAULT ''"))
+            conn.execute(text("ALTER TABLE case_documents ADD COLUMN IF NOT EXISTS file_size INTEGER DEFAULT 0"))
+            conn.execute(text("ALTER TABLE case_documents ADD COLUMN IF NOT EXISTS file_content BYTEA"))
+            return
+
+        existing = {
+            row[0]
+            for row in conn.execute(
+                text(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_name = 'case_documents'"
+                )
+            ).fetchall()
+        }
+        for column_name, sql_type in required_columns.items():
+            if column_name not in existing:
+                conn.execute(text(f"ALTER TABLE case_documents ADD COLUMN {column_name} {sql_type}"))
 
 
 def _ensure_demo_board_data(db) -> None:

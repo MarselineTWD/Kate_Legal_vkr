@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+{% block title %}Новое обращение{% endblock %}
+{% block content %}
+<section class="portal-page">
+  <div class="portal-page__header">
+    <div>
+      <div class="portal-page__eyebrow">Новое обращение</div>
+      <h1 class="portal-page__title">Подать запрос в юридическую команду</h1>
+      <p class="portal-page__intro">
+        Опишите ситуацию, приложите документы и отправьте обращение. После проверки мы назначим ответственного юриста и уведомим вас в кабинете.
+      </p>
+    </div>
+    <div class="portal-actions">
+      <a href="/client/cases" class="portal-button portal-button--secondary">Мои дела</a>
+    </div>
+  </div>
+
+  {% if created %}
+  <div class="portal-alert portal-alert--success">
+    <strong>Обращение отправлено.</strong>
+    <span>Мы уже зарегистрировали заявку и уведомим вас после принятия её в работу.</span>
+  </div>
+  {% endif %}
+
+  <div class="portal-grid portal-grid--content">
+    <article class="portal-card portal-card--panel portal-card--span-2">
+      <div class="portal-card__head">
+        <div>
+          <div class="portal-card__eyebrow">Шаг 1 / описание запроса</div>
+          <h2 class="portal-card__title">Заполните карточку обращения</h2>
+        </div>
+      </div>
+
+      <form method="post" action="/client/intake" class="portal-form" enctype="multipart/form-data">
+        <div class="portal-form__section">
+          <div class="portal-form__section-head">
+            <span class="portal-step">1</span>
+            <div>
+              <h3>Основная информация</h3>
+              <p>Кратко сформулируйте тему и выберите подходящую категорию, чтобы мы быстрее направили запрос в работу.</p>
+            </div>
+          </div>
+
+          <div class="portal-form-grid portal-form-grid--2">
+            <label class="portal-field">
+              <span>Тема обращения</span>
+              <input class="portal-control" type="text" id="client-intake-topic" name="case_title" placeholder="Например: оспаривание увольнения" required />
+              <small>Используйте короткий и понятный заголовок.</small>
+            </label>
+
+            <label class="portal-field">
+              <span>Категория</span>
+              <select class="portal-control" id="client-intake-category" name="category" required>
+                <option value="">Выберите категорию обращения</option>
+                <option value="Трудовое право">Трудовое право</option>
+                <option value="Семейное право">Семейное право</option>
+                <option value="Наследственное право">Наследственное право</option>
+                <option value="Жилищное право">Жилищное право</option>
+                <option value="Земельное право">Земельное право</option>
+                <option value="Договорное право">Договорное право</option>
+                <option value="Корпоративное право">Корпоративное право</option>
+                <option value="Налоговое право">Налоговое право</option>
+                <option value="Банкротство">Банкротство</option>
+                <option value="Арбитражные споры">Арбитражные споры</option>
+                <option value="Административное право">Административное право</option>
+                <option value="Уголовное право">Уголовное право</option>
+                <option value="Защита прав потребителей">Защита прав потребителей</option>
+                <option value="Споры с банками">Споры с банками</option>
+                <option value="Страховые споры">Страховые споры</option>
+                <option value="Исполнительное производство">Исполнительное производство</option>
+                <option value="Интеллектуальная собственность">Интеллектуальная собственность</option>
+                <option value="Международное право">Международное право</option>
+                <option value="Миграционное право">Миграционное право</option>
+                <option value="Другое">Другое</option>
+              </select>
+              <small>Если сомневаетесь, выберите ближайшую категорию.</small>
+            </label>
+          </div>
+        </div>
+
+        <div class="portal-form__section">
+          <div class="portal-form__section-head">
+            <span class="portal-step">2</span>
+            <div>
+              <h3>Опишите ситуацию</h3>
+              <p>Укажите факты, ключевые даты, участников и ожидаемый результат. Чем понятнее описание, тем быстрее команда сформирует следующий шаг.</p>
+            </div>
+          </div>
+
+          <label class="portal-field">
+            <span>Описание проблемы</span>
+            <textarea class="portal-control portal-control--textarea" id="client-intake-description" name="message" rows="8" placeholder="Опишите, что произошло, какие документы уже есть и какую помощь вы ожидаете."></textarea>
+            <small>Рекомендуем указать даты событий, контрагентов и текущий статус вопроса.</small>
+          </label>
+        </div>
+
+        <div class="portal-form__section">
+          <div class="portal-form__section-head">
+            <span class="portal-step">3</span>
+            <div>
+              <h3>Приложите документы</h3>
+              <p>Загрузите договоры, переписку, претензии, решения суда или другие материалы, которые помогут быстрее оценить ситуацию.</p>
+            </div>
+          </div>
+
+          <div class="upload-zone" data-upload-zone>
+            <div class="upload-zone__icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-file"></use></svg>
+            </div>
+            <div class="upload-zone__copy">
+              <strong>Перетащите файлы сюда или выберите вручную</strong>
+              <p>Поддерживаются несколько вложений. Документы автоматически прикрепятся к новому обращению.</p>
+            </div>
+            <label class="portal-button portal-button--secondary upload-zone__button">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-paperclip"></use></svg>
+              <span>Выбрать файлы</span>
+              <input class="upload-zone__input" type="file" name="documents" multiple />
+            </label>
+            <small class="upload-zone__meta" data-upload-label>Файлы не выбраны</small>
+          </div>
+        </div>
+
+        <div class="portal-form__footer">
+          <div class="portal-form__note">
+            После отправки обращение появится в разделе «Мои дела», а статус автоматически обновится после проверки администратором.
+          </div>
+          <button type="submit" class="portal-button portal-button--primary portal-button--large">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-arrow-right"></use></svg>
+            <span>Отправить обращение</span>
+          </button>
+        </div>
+      </form>
+    </article>
+
+
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  (function () {
+    const STORAGE_KEY = 'client_intake_draft';
+    const topic = document.getElementById('client-intake-topic');
+    const description = document.getElementById('client-intake-description');
+    const category = document.getElementById('client-intake-category');
+    if (!topic || !description || !category) return;
+
+    const params = new URLSearchParams(window.location.search);
+    const created = params.get('created') === '1';
+    if (created) {
+      try {
+        localStorage.removeItem(STORAGE_KEY);
+      } catch (error) {
+        console.warn('Cannot clear request draft from localStorage', error);
+      }
+      return;
+    }
+
+    const saveDraft = () => {
+      try {
+        localStorage.setItem(
+          STORAGE_KEY,
+          JSON.stringify({
+            topic: topic.value,
+            description: description.value,
+            category: category.value,
+          }),
+        );
+      } catch (error) {
+        console.warn('Cannot save request draft to localStorage', error);
+      }
+    };
+
+    let draft = null;
+    try {
+      draft = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+    } catch (error) {
+      draft = null;
+    }
+
+    if (draft) {
+      if (!topic.value && typeof draft.topic === 'string') {
+        topic.value = draft.topic.trim();
+      }
+      if (!description.value && typeof draft.description === 'string') {
+        description.value = draft.description.trim();
+      }
+      if (!category.value && typeof draft.category === 'string') {
+        category.value = draft.category;
+      }
+    }
+
+    topic.addEventListener('input', saveDraft);
+    description.addEventListener('input', saveDraft);
+    category.addEventListener('change', saveDraft);
+  })();
+</script>
+{% endblock %}

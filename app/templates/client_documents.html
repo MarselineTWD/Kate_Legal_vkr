@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+{% block title %}Документы{% endblock %}
+{% block content %}
+<section class="portal-page">
+  <div class="portal-page__header">
+    <div>
+      <div class="portal-page__eyebrow">Документы</div>
+      <h1 class="portal-page__title">Документный центр клиента</h1>
+      <p class="portal-page__intro">
+        Загружайте материалы по делам, храните версии в одном месте и быстро возвращайтесь к нужным файлам без лишнего поиска.
+      </p>
+    </div>
+  </div>
+
+  {% if uploaded %}
+  <div class="portal-alert portal-alert--success">
+    <strong>Документ загружен.</strong>
+    <span>Файл добавлен в карточку выбранного дела и доступен для скачивания.</span>
+  </div>
+  {% elif deleted %}
+  <div class="portal-alert portal-alert--success">
+    <strong>Документ удален.</strong>
+    <span>Файл удален из карточки дела.</span>
+  </div>
+  {% elif error == 'file' %}
+  <div class="portal-alert portal-alert--danger">
+    <strong>Не выбран файл.</strong>
+    <span>Прикрепите документ и повторите загрузку.</span>
+  </div>
+  {% elif error == 'document' %}
+  <div class="portal-alert portal-alert--danger">
+    <strong>Документ не найден.</strong>
+    <span>Возможно, он уже был удален.</span>
+  </div>
+  {% elif error == 'duplicate' %}
+  <div class="portal-alert portal-alert--danger">
+    <strong>Обнаружены дубликаты.</strong>
+    <span>Нельзя загружать документы с именами, которые уже есть среди ваших загруженных документов.</span>
+  </div>
+  {% endif %}
+
+  <div class="portal-grid portal-grid--content">
+    <article class="portal-card portal-card--panel portal-card--span-2" id="upload-document">
+      <div class="portal-card__head">
+        <div>
+          <div class="portal-card__eyebrow">Загрузка документов</div>
+          <h2 class="portal-card__title">Добавить новый файл</h2>
+        </div>
+      </div>
+
+      {% if cases %}
+      <form method="post" action="/client/documents/upload" class="portal-form" enctype="multipart/form-data">
+        <div class="portal-form-grid portal-form-grid--2">
+          <label class="portal-field">
+            <span>Дело</span>
+            <select class="portal-control" name="legal_case_id" required>
+              {% for c in cases %}
+              <option value="{{ c.id }}" {% if selected_case_id and selected_case_id == c.id %}selected{% endif %}>
+                {{ c.case_number }} — {{ c.title }}
+              </option>
+              {% endfor %}
+            </select>
+            <small>Выберите карточку дела, к которой нужно прикрепить файл.</small>
+          </label>
+
+          <label class="portal-field">
+            <span>Комментарий / версия</span>
+            <input class="portal-control" type="text" name="description" placeholder="Например: подписанная версия договора" />
+            <small>Необязательно. Помогает отличать версии и быстрые правки.</small>
+          </label>
+        </div>
+
+        <div class="upload-zone upload-zone--compact" data-upload-zone>
+          <div class="upload-zone__icon">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-file"></use></svg>
+          </div>
+          <div class="upload-zone__copy">
+            <strong>Перетащите файл или выберите вручную</strong>
+            <p>Поддерживаются договоры, сканы, переписка, претензии и другие материалы по делу.</p>
+          </div>
+          <label class="portal-button portal-button--secondary upload-zone__button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-paperclip"></use></svg>
+            <span>Выбрать файлы</span>
+            <input class="upload-zone__input" type="file" name="documents" multiple required />
+          </label>
+          <small class="upload-zone__meta" data-upload-label>Файлы не выбраны</small>
+          <ul class="upload-zone__pending" data-upload-pending hidden></ul>
+        </div>
+
+        <div class="portal-form__footer portal-form__footer--split">
+          <div class="portal-form__note">Файл появится в списке ниже сразу после загрузки.</div>
+          <button type="submit" class="portal-button portal-button--primary">Загрузить документы</button>
+        </div>
+      </form>
+      {% else %}
+      <div class="portal-empty portal-empty--compact">
+        <h3>Сначала создайте обращение</h3>
+        <p>Документы можно прикреплять только к существующим делам клиента.</p>
+        <a href="/client/intake" class="portal-button portal-button--primary">Подать обращение</a>
+      </div>
+      {% endif %}
+    </article>
+
+    <article class="portal-card portal-card--panel portal-card--span-2">
+      <div class="portal-card__head portal-card__head--stacked">
+        <div>
+          <div class="portal-card__eyebrow">Архив файлов</div>
+          <h2 class="portal-card__title">Список документов</h2>
+        </div>
+        {% if cases %}
+        <div class="portal-filter-chips" data-filter-group{% if selected_case_id %} data-filter-default="case-{{ selected_case_id }}"{% else %} data-filter-default="all"{% endif %}>
+          <button type="button" class="portal-filter-chip is-active" data-filter-button="all">Все</button>
+          {% for c in cases %}
+          <button type="button" class="portal-filter-chip" data-filter-button="case-{{ c.id }}">{{ c.case_number }}</button>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+
+      <div class="document-list" data-documents-list>
+        {% for item in documents %}
+          {% set item_case = case_map[item.legal_case_id] if item.legal_case_id in case_map else None %}
+          {% set file_ext = item.original_filename.rsplit('.', 1)[-1].upper() if '.' in item.original_filename else 'FILE' %}
+        <article class="document-row" data-filter-item data-filter-tags="all case-{{ item.legal_case_id }}" data-document-row-id="{{ item.id }}">
+          <div class="document-row__icon">{{ file_ext[:4] }}</div>
+          <div class="document-row__content">
+            <div class="document-row__top">
+              <div>
+                <h3>{{ item.original_filename }}</h3>
+                <p>{{ item_case.case_number if item_case else 'Без дела' }}{% if item_case %} — {{ item_case.title }}{% endif %}</p>
+              </div>
+              <span class="status-badge status-badge--surface">{{ item.created_at.strftime('%d.%m.%Y %H:%M') if item.created_at else '-' }}</span>
+            </div>
+            <div class="document-row__meta">
+              <span>Комментарий: {{ item.description or 'Без комментария' }}</span>
+              <span>Тип: {{ file_ext }}</span>
+            </div>
+          </div>
+          <div class="document-row__actions">
+            <a href="/client/documents/{{ item.id }}/view" class="portal-button portal-button--secondary" target="_blank" rel="noopener">
+              <span>Открыть</span>
+            </a>
+            <a href="/client/documents/{{ item.id }}/download" class="portal-button portal-button--ghost">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-download"></use></svg>
+              <span>Скачать</span>
+            </a>
+            <form method="post" action="/client/documents/{{ item.id }}/delete" data-document-delete-form>
+              <button type="submit" class="portal-button portal-button--ghost document-row__delete-button">
+                <span>Удалить</span>
+              </button>
+            </form>
+          </div>
+        </article>
+        {% else %}
+        <div class="portal-empty">
+          <div class="portal-empty__icon">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-file"></use></svg>
+          </div>
+          <h3>Документов пока нет</h3>
+          <p>После загрузки здесь появится удобный список файлов с комментариями, датами и быстрым скачиванием.</p>
+        </div>
+        {% endfor %}
+      </div>
+    </article>
+
+    
+  </div>
+</section>
+
+<div class="portal-modal" id="client-document-delete-modal" hidden>
+  <div class="portal-modal__backdrop" data-document-delete-close></div>
+  <div class="portal-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="client-document-delete-title">
+    <div class="portal-modal__header">
+      <h3 id="client-document-delete-title">Удалить документ?</h3>
+    </div>
+    <p class="portal-modal__text">Документ будет удален без возможности восстановления.</p>
+    <div class="portal-modal__actions">
+      <button type="button" class="portal-button portal-button--ghost" data-document-delete-close>Отмена</button>
+      <button type="button" class="portal-button portal-button--danger" data-document-delete-confirm>Удалить</button>
+    </div>
+  </div>
+</div>
+{% endblock %}

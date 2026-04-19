@@ -1,6 +1,117 @@
 {% extends "base.html" %}
 {% block title %}Уведомления{% endblock %}
 {% block content %}
+{% if user.role.value == "CLIENT" %}
+<section class="portal-page">
+  <div class="portal-page__header">
+    <div>
+      <div class="portal-page__eyebrow">Уведомления</div>
+      <h1 class="portal-page__title">Центр уведомлений</h1>
+      <p class="portal-page__intro">
+        Здесь собраны все изменения по делам: изменения статусов, загрузки документов и другие важные действия.
+      </p>
+    </div>
+  </div>
+
+  <div class="portal-stats-grid portal-stats-grid--3">
+    <article class="stat-card">
+      <div class="stat-card__icon stat-card__icon--info">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-bell"></use></svg>
+      </div>
+      <div class="stat-card__content">
+        <span>Новые</span>
+        <strong id="notifications-unread-count">{{ unread }}</strong>
+        <small>Требуют внимания</small>
+      </div>
+    </article>
+    <article class="stat-card">
+      <div class="stat-card__icon stat-card__icon--navy">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-grid"></use></svg>
+      </div>
+      <div class="stat-card__content">
+        <span>Прочитанные</span>
+        <strong>{{ notifications|length - unread }}</strong>
+        <small>Уже просмотрены</small>
+      </div>
+    </article>
+    <article class="stat-card">
+      <div class="stat-card__icon stat-card__icon--brand">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-shield"></use></svg>
+      </div>
+      <div class="stat-card__content">
+        <span>Всего</span>
+        <strong>{{ notifications|length }}</strong>
+        <small>Событий в журнале кабинета</small>
+      </div>
+    </article>
+  </div>
+
+  <article class="portal-card portal-card--panel">
+    <div class="portal-card__head portal-card__head--stacked">
+      <div>
+        <div class="portal-card__eyebrow">Лента уведомлений</div>
+        <h2 class="portal-card__title">Последние события</h2>
+      </div>
+      <div class="portal-filter-chips" data-filter-group data-filter-default="all">
+        <button type="button" class="portal-filter-chip is-active" data-filter-button="all">Все</button>
+        <button type="button" class="portal-filter-chip" data-filter-button="unread">Новые</button>
+        <button type="button" class="portal-filter-chip" data-filter-button="read">Прочитанные</button>
+      </div>
+    </div>
+
+    <div class="notification-feed">
+      {% for item in notifications %}
+        {% set notification_text = (item.title ~ ' ' ~ item.message)|lower %}
+        {% if 'сообщ' in notification_text %}
+          {% set icon_id = 'icon-message' %}
+        {% elif 'документ' in notification_text or 'файл' in notification_text %}
+          {% set icon_id = 'icon-file' %}
+        {% elif 'срок' in notification_text or 'засед' in notification_text or 'календар' in notification_text %}
+          {% set icon_id = 'icon-calendar' %}
+        {% elif 'профиль' in notification_text %}
+          {% set icon_id = 'icon-user' %}
+        {% else %}
+          {% set icon_id = 'icon-bell' %}
+        {% endif %}
+      <article class="notification-item{% if not item.is_read %} is-unread{% endif %}" data-notification-row data-notification-id="{{ item.id }}" data-filter-item data-filter-tags="all {% if item.is_read %}read{% else %}unread{% endif %}">
+        <div class="notification-item__icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#{{ icon_id }}"></use></svg>
+        </div>
+        <div class="notification-item__content">
+          <div class="notification-item__meta">
+            <strong>{{ item.title }}</strong>
+            <span>{{ item.created_at.strftime('%d.%m.%Y %H:%M') if item.created_at else '-' }}</span>
+          </div>
+          <p>{{ item.message }}</p>
+          <div class="notification-item__footer">
+            <span class="status-badge {% if item.is_read %}status-badge--surface{% else %}status-badge--info{% endif %}" data-notification-status>
+              {% if item.is_read %}Прочитано{% else %}Новое{% endif %}
+            </span>
+            <div data-notification-action>
+              {% if not item.is_read %}
+              <form method="post" action="/notifications/{{ item.id }}/read" class="js-notification-read-form">
+                <button type="submit" class="portal-button portal-button--ghost">Отметить как прочитанное</button>
+              </form>
+              {% else %}
+              <span class="notification-item__hint">Уже просмотрено</span>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </article>
+      {% else %}
+      <div class="portal-empty">
+        <div class="portal-empty__icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-bell"></use></svg>
+        </div>
+        <h3>Уведомлений пока нет</h3>
+        <p>Как только в делах произойдут изменения, они появятся здесь в виде аккуратной ленты событий.</p>
+      </div>
+      {% endfor %}
+    </div>
+  </article>
+</section>
+{% else %}
 <section class="page">
   <h1>Уведомления</h1>
   <p class="subtitle">Непрочитанных: <span id="notifications-unread-count">{{ unread }}</span></p>
@@ -32,4 +143,5 @@
     </table>
   </div>
 </section>
+{% endif %}
 {% endblock %}

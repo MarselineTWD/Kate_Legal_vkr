@@ -3,7 +3,7 @@
 import enum
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, Enum, Float, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Boolean, Date, DateTime, Enum, Float, ForeignKey, Integer, LargeBinary, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -13,6 +13,7 @@ from .encryption import EncryptedText
 class Role(str, enum.Enum):
     ADMIN = "ADMIN"
     LAWYER = "LAWYER"
+    CLIENT = "CLIENT"
 
 
 class CaseStage(str, enum.Enum):
@@ -65,11 +66,18 @@ class Client(Base):
     __tablename__ = "clients"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, unique=True)
     name: Mapped[str] = mapped_column(String(255), index=True)
     client_type: Mapped[str] = mapped_column(String(24), default="ORGANIZATION")
     email: Mapped[str] = mapped_column(EncryptedText, default="")
     phone: Mapped[str] = mapped_column(EncryptedText, default="")
     address: Mapped[str] = mapped_column(EncryptedText, default="")
+    inn: Mapped[str] = mapped_column(EncryptedText, default="")
+    ogrn: Mapped[str] = mapped_column(EncryptedText, default="")
+    bank_details: Mapped[str] = mapped_column(EncryptedText, default="")
+    passport_details: Mapped[str] = mapped_column(EncryptedText, default="")
+    other_details: Mapped[str] = mapped_column(EncryptedText, default="")
+    requisites: Mapped[str] = mapped_column(EncryptedText, default="")
     notes: Mapped[str] = mapped_column(EncryptedText, default="")
 
     cases: Mapped[list[LegalCase]] = relationship(back_populates="client")
@@ -85,6 +93,8 @@ class LegalCase(Base):
     description: Mapped[str] = mapped_column(Text)
     stage: Mapped[CaseStage] = mapped_column(Enum(CaseStage), default=CaseStage.NEW_REQUEST)
     priority: Mapped[str] = mapped_column(String(16), default="MEDIUM")
+    intake_approved: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     opened_at: Mapped[date] = mapped_column(Date)
     deadline: Mapped[date | None] = mapped_column(Date, nullable=True)
     client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"))
@@ -160,9 +170,25 @@ class ClientChatMessage(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"))
+    legal_case_id: Mapped[int | None] = mapped_column(ForeignKey("legal_cases.id"), nullable=True)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     message: Mapped[str] = mapped_column(Text)
     is_from_client: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class CaseDocument(Base):
+    __tablename__ = "case_documents"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    legal_case_id: Mapped[int] = mapped_column(ForeignKey("legal_cases.id"), index=True)
+    uploaded_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    original_filename: Mapped[str] = mapped_column(String(255))
+    stored_filename: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    mime_type: Mapped[str] = mapped_column(String(255), default="")
+    file_size: Mapped[int] = mapped_column(Integer, default=0)
+    file_content: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    description: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 

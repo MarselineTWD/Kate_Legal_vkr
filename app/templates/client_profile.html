@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+{% block title %}Профиль клиента{% endblock %}
+{% block content %}
+<section class="portal-page">
+  <div class="portal-page__header">
+    <div>
+      <div class="portal-page__eyebrow">Профиль клиента</div>
+      <h1 class="portal-page__title">Личные данные и реквизиты</h1>
+      <p class="portal-page__intro">
+        Поддерживайте контакты и реквизиты в актуальном состоянии, чтобы юридическая команда могла быстрее связаться с вами
+        и корректно готовить документы.
+      </p>
+    </div>
+  </div>
+
+  {% if saved %}
+  <div class="portal-alert portal-alert--success">
+    <strong>Профиль обновлен.</strong>
+    <span>Изменения сохранены и уже доступны в клиентской карточке.</span>
+  </div>
+  {% elif error == 'email' %}
+  <div class="portal-alert portal-alert--danger">
+    <strong>Некорректный email.</strong>
+    <span>Проверьте адрес электронной почты и повторите сохранение.</span>
+  </div>
+  {% elif error == 'email_exists' %}
+  <div class="portal-alert portal-alert--warning">
+    <strong>Email уже используется.</strong>
+    <span>Укажите другой адрес, который еще не привязан к другому пользователю.</span>
+  </div>
+  {% endif %}
+
+  <div class="portal-grid portal-grid--content">
+    <article class="portal-card portal-card--panel portal-card--span-2">
+      <form method="post" action="/client/profile" class="portal-form" data-client-profile-form>
+        <div class="portal-form__section">
+          <div class="portal-form__section-head">
+            <span class="portal-step">1</span>
+            <div>
+              <h3>Основные сведения</h3>
+              <p>Данные из этого раздела используются в клиентской карточке и рабочих документах.</p>
+            </div>
+          </div>
+
+          <div class="portal-form-grid portal-form-grid--2">
+            <label class="portal-field">
+              <span>ФИО / организация</span>
+              <input class="portal-control" type="text" name="name" value="{{ client.name if client else user.full_name }}" required readonly data-profile-field />
+            </label>
+            <label class="portal-field">
+              <span>Email</span>
+              <input class="portal-control" type="email" name="email" value="{{ client.email if client else user.email }}" required readonly data-profile-field />
+            </label>
+            <label class="portal-field">
+              <span>Телефон</span>
+              <input class="portal-control" type="text" name="phone" value="{{ client.phone if client else user.phone }}" maxlength="20" placeholder="+7 (900) 000-00-00" data-phone-mask readonly data-profile-field />
+            </label>
+            <label class="portal-field">
+              <span>Адрес</span>
+              <input class="portal-control" type="text" name="address" value="{{ client.address if client else '' }}" readonly data-profile-field />
+            </label>
+          </div>
+        </div>
+
+        <div class="portal-form__section">
+          <div class="portal-form__section-head">
+            <span class="portal-step">2</span>
+            <div>
+              <h3>Реквизиты</h3>
+              <p>Заполните отдельные поля, чтобы ускорить подготовку документов.</p>
+            </div>
+          </div>
+
+          <div class="portal-form-grid portal-form-grid--2">
+            <label class="portal-field">
+              <span>ИНН</span>
+              <input class="portal-control" type="text" name="inn" value="{{ client.inn if client else '' }}" inputmode="numeric" maxlength="14" placeholder="0000 0000 0000" data-digits-group="4" readonly data-profile-field />
+            </label>
+            <label class="portal-field">
+              <span>ОГРН</span>
+              <input class="portal-control" type="text" name="ogrn" value="{{ client.ogrn if client else '' }}" inputmode="numeric" maxlength="19" placeholder="000 000 000 000 000" data-digits-group="3" readonly data-profile-field />
+            </label>
+            <label class="portal-field">
+              <span>Банковские реквизиты</span>
+              <textarea class="portal-control portal-control--textarea" name="bank_details" rows="3" placeholder="БИК, р/с, к/с, наименование банка" readonly data-profile-field>{{ client.bank_details if client else '' }}</textarea>
+            </label>
+            <label class="portal-field">
+              <span>Паспортные данные</span>
+              <textarea class="portal-control portal-control--textarea" name="passport_details" rows="3" placeholder="Серия, номер, кем и когда выдан" readonly data-profile-field>{{ client.passport_details if client else '' }}</textarea>
+            </label>
+          </div>
+
+          <div class="portal-form-grid">
+            <label class="portal-field">
+              <span>Иные сведения</span>
+              <textarea class="portal-control portal-control--textarea" name="other_details" rows="2" placeholder="Дополнительные сведения по реквизитам" readonly data-profile-field>{{ client.other_details if client else '' }}</textarea>
+            </label>
+          </div>
+        </div>
+
+        <div class="portal-form__footer portal-form__footer--profile">
+          <button type="button" class="portal-button portal-button--secondary" data-profile-edit-toggle>Редактировать</button>
+          <div class="portal-form__actions" data-profile-edit-actions hidden aria-hidden="true" style="display: none;">
+            <button type="button" class="portal-button portal-button--ghost" data-profile-edit-cancel>Отменить изменения</button>
+            <button type="submit" class="portal-button portal-button--primary" data-profile-submit>Сохранить изменения</button>
+          </div>
+        </div>
+      </form>
+    </article>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+  (function () {
+    const formatPhone = (value) => {
+      const digits = (value || '').replace(/\D/g, '').slice(0, 11);
+      if (!digits) return '';
+      const national = digits.startsWith('8') ? `7${digits.slice(1)}` : digits;
+      const withCode = national.startsWith('7') ? national : `7${national}`;
+      const country = '+7';
+      const p1 = withCode.slice(1, 4);
+      const p2 = withCode.slice(4, 7);
+      const p3 = withCode.slice(7, 9);
+      const p4 = withCode.slice(9, 11);
+      let out = country;
+      if (p1) out += ` (${p1}`;
+      if (p1.length === 3) out += ')';
+      if (p2) out += ` ${p2}`;
+      if (p3) out += `-${p3}`;
+      if (p4) out += `-${p4}`;
+      return out;
+    };
+
+    const formatDigitsGroup = (value, group) => {
+      const size = Number(group) || 4;
+      const digits = (value || '').replace(/\D/g, '');
+      if (!digits) return '';
+      return digits.match(new RegExp(`.{1,${size}}`, 'g')).join(' ');
+    };
+
+    const phoneInput = document.querySelector('[data-phone-mask]');
+    if (phoneInput) {
+      phoneInput.addEventListener('input', () => {
+        phoneInput.value = formatPhone(phoneInput.value);
+      });
+      phoneInput.value = formatPhone(phoneInput.value);
+    }
+
+    document.querySelectorAll('[data-digits-group]').forEach((input) => {
+      input.addEventListener('input', () => {
+        input.value = formatDigitsGroup(input.value, input.dataset.digitsGroup);
+      });
+      input.value = formatDigitsGroup(input.value, input.dataset.digitsGroup);
+    });
+
+    const profileForm = document.querySelector('[data-client-profile-form]');
+    if (profileForm) {
+      const fields = Array.from(profileForm.querySelectorAll('[data-profile-field]'));
+      const editButton = profileForm.querySelector('[data-profile-edit-toggle]');
+      const editActions = profileForm.querySelector('[data-profile-edit-actions]');
+      const cancelButton = profileForm.querySelector('[data-profile-edit-cancel]');
+      const submitButton = profileForm.querySelector('[data-profile-submit]');
+      const initialValues = new Map(fields.map((field) => [field.name, field.value]));
+
+      const setReadOnlyState = (isReadOnly) => {
+        fields.forEach((field) => {
+          if (isReadOnly) {
+            field.setAttribute('readonly', 'readonly');
+          } else {
+            field.removeAttribute('readonly');
+          }
+        });
+        if (editButton) editButton.hidden = !isReadOnly;
+        if (editButton) editButton.style.display = isReadOnly ? 'inline-flex' : 'none';
+        if (editActions) {
+          editActions.hidden = isReadOnly;
+          editActions.setAttribute('aria-hidden', String(isReadOnly));
+          editActions.style.display = isReadOnly ? 'none' : 'inline-flex';
+        }
+        if (cancelButton) cancelButton.disabled = isReadOnly;
+        if (submitButton) submitButton.disabled = isReadOnly;
+      };
+
+      if (editButton) {
+        editButton.addEventListener('click', () => setReadOnlyState(false));
+      }
+
+      if (cancelButton) {
+        cancelButton.addEventListener('click', () => {
+          fields.forEach((field) => {
+            field.value = initialValues.get(field.name) || '';
+          });
+          if (phoneInput) phoneInput.value = formatPhone(phoneInput.value);
+          document.querySelectorAll('[data-digits-group]').forEach((input) => {
+            input.value = formatDigitsGroup(input.value, input.dataset.digitsGroup);
+          });
+          setReadOnlyState(true);
+        });
+      }
+
+      setReadOnlyState(true);
+    }
+  })();
+</script>
+{% endblock %}

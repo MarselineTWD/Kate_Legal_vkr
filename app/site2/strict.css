@@ -328,6 +328,20 @@ input[type="reset"]:hover {
 .table-card a { color: #9fbde6; font-weight: 600; text-decoration: none; }
 .table-card a:hover { color: #c4dbfb; }
 .table-card td > * { max-width: 100%; }
+.table-card tbody tr.deadline-warning td {
+  background: rgba(214, 163, 33, .1);
+}
+.table-card tbody tr.deadline-urgent td {
+  background: rgba(199, 58, 58, .1);
+}
+.table-card td.deadline-date-warning {
+  color: #b07900;
+  font-weight: 700;
+}
+.table-card td.deadline-date-urgent {
+  color: #b32525;
+  font-weight: 700;
+}
 .resizable-table th {
   position: relative;
 }
@@ -687,6 +701,15 @@ body.is-resizing-columns * {
   color: #132844;
   background: #ffffff;
 }
+select option:checked,
+select option:focus {
+  color: #ffffff;
+  background: #1d5fbf;
+}
+select option:hover {
+  background: #e6f0ff;
+  color: #132844;
+}
 .inline-form textarea {
   resize: vertical;
 }
@@ -847,6 +870,20 @@ body.is-resizing-columns * {
   gap: 10px;
   min-height: 420px;
   height: 420px;
+}
+.case-card--deadline-warning {
+  border-left: 4px solid #d6a321 !important;
+}
+.case-card--deadline-urgent {
+  border-left: 4px solid #c73a3a !important;
+}
+.case-card__deadline--warning {
+  color: #b07900 !important;
+  font-weight: 700;
+}
+.case-card__deadline--urgent {
+  color: #b32525 !important;
+  font-weight: 700;
 }
 .case-card__header {
   display: flex;

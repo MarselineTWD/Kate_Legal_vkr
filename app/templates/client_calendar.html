@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block title %}События и сроки{% endblock %}
+{% block content %}
+<section class="portal-page">
+  {% set ns = namespace(soon=0, overdue=0) %}
+  {% for item in timeline %}
+    {% if item.urgency == 'soon' %}
+      {% set ns.soon = ns.soon + 1 %}
+    {% elif item.urgency == 'overdue' %}
+      {% set ns.overdue = ns.overdue + 1 %}
+    {% endif %}
+  {% endfor %}
+
+  <div class="portal-page__header">
+    <div>
+      <div class="portal-page__eyebrow">События / календарь</div>
+      <h1 class="portal-page__title">Сроки, встречи и контрольные точки</h1>
+      <p class="portal-page__intro">
+        Следите за ближайшими дедлайнами и важными событиями по делам в одном спокойном таймлайне без перегруженных таблиц.
+      </p>
+    </div>
+  </div>
+
+  <div class="portal-stats-grid portal-stats-grid--3">
+    <article class="stat-card">
+      <div class="stat-card__icon stat-card__icon--navy">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-calendar"></use></svg>
+      </div>
+      <div class="stat-card__content">
+        <span>Всего событий</span>
+        <strong>{{ timeline|length }}</strong>
+        <small>Видимые сроки и встречи</small>
+      </div>
+    </article>
+    <article class="stat-card">
+      <div class="stat-card__icon stat-card__icon--warning">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-bell"></use></svg>
+      </div>
+      <div class="stat-card__content">
+        <span>Близкие сроки</span>
+        <strong>{{ ns.soon }}</strong>
+        <small>В течение ближайших 3 дней</small>
+      </div>
+    </article>
+    <article class="stat-card">
+      <div class="stat-card__icon stat-card__icon--danger">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-shield"></use></svg>
+      </div>
+      <div class="stat-card__content">
+        <span>Просрочено</span>
+        <strong>{{ ns.overdue }}</strong>
+        <small>Нуждается в оперативном внимании</small>
+      </div>
+    </article>
+  </div>
+
+  <article class="portal-card portal-card--panel">
+    <div class="portal-card__head">
+      <div>
+        <div class="portal-card__eyebrow">Таймлайн</div>
+        <h2 class="portal-card__title">Ближайшие сроки и события</h2>
+      </div>
+    </div>
+
+    <div class="timeline-list">
+      {% for item in timeline %}
+        {% set days_left = (item.date - today).days %}
+      <article class="timeline-item{% if item.urgency == 'overdue' %} is-danger{% elif item.urgency == 'soon' %} is-warning{% endif %}">
+        <div class="timeline-item__date">
+          <strong>{{ item.date.strftime('%d') }}</strong>
+          <span>{{ item.date.strftime('%b') }}</span>
+          <small>{{ item.date.strftime('%Y') }}</small>
+        </div>
+        <div class="timeline-item__body">
+          <div class="timeline-item__top">
+            <div class="timeline-item__badges">
+              <span class="status-badge {% if item.kind == 'Задача' %}status-badge--info{% else %}status-badge--surface{% endif %}">
+                {{ item.kind }}
+              </span>
+              <span class="status-badge {% if item.urgency == 'overdue' %}status-badge--danger{% elif item.urgency == 'soon' %}status-badge--warning{% else %}status-badge--brand-soft{% endif %}">
+                {% if item.urgency == 'overdue' %}
+                  Просрочено
+                {% elif item.urgency == 'soon' %}
+                  Скоро
+                {% else %}
+                  По плану
+                {% endif %}
+              </span>
+            </div>
+            <span class="timeline-item__distance">
+              {% if days_left < 0 %}
+                Просрочка {{ days_left|abs }} дн.
+              {% elif days_left == 0 %}
+                Сегодня
+              {% elif days_left == 1 %}
+                Завтра
+              {% else %}
+                Через {{ days_left }} дн.
+              {% endif %}
+            </span>
+          </div>
+          <h3>{{ item.title }}</h3>
+          <p>{{ item.status }}</p>
+          {% if item.case_number %}
+          <div class="timeline-item__meta">Дело: {{ item.case_number }}</div>
+          {% endif %}
+        </div>
+      </article>
+      {% else %}
+      <div class="portal-empty">
+        <div class="portal-empty__icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-calendar"></use></svg>
+        </div>
+        <h3>Событий пока нет</h3>
+        <p>Когда по делам появятся задачи, встречи или контрольные сроки, они отобразятся здесь.</p>
+      </div>
+      {% endfor %}
+    </div>
+  </article>
+</section>
+{% endblock %}

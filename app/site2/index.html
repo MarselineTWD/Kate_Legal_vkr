@@ -111,15 +111,17 @@
           <li>Персональная стратегия по делу</li>
         </ul>
       </div>
-      <form class="request-form" action="/login" method="get">
+      <form class="request-form" id="landing-request-form" action="/login" method="get">
         <p class="small-title">Связаться с нами</p>
         <h3>Подать заявку</h3>
         <label>Ваше имя</label>
-        <input type="text" placeholder="Введите имя" />
+        <input type="text" id="landing-request-name" placeholder="Введите имя" />
         <label>Телефон или email</label>
-        <input type="text" placeholder="Укажите контакт" />
-        <label>Кратко о задаче</label>
-        <textarea rows="4" placeholder="Опишите ситуацию"></textarea>
+        <input type="text" id="landing-request-contact" placeholder="Укажите контакт" />
+        <label>Тема обращения</label>
+        <input type="text" id="landing-request-topic" placeholder="Например: Трудовой спор" />
+        <label>Описание проблемы</label>
+        <textarea id="landing-request-description" rows="4" placeholder="Опишите ситуацию"></textarea>
         <button class="btn btn-main" type="submit">Отправить заявку</button>
       </form>
     </div>
@@ -144,5 +146,37 @@
       <div class="footer-copy">© 2026 ЮрНавигатор. Все права защищены.</div>
     </div>
   </footer>
+  <script>
+    (function () {
+      const form = document.getElementById('landing-request-form');
+      if (!form) return;
+
+      const STORAGE_KEY = 'client_intake_draft';
+      const read = (id) => {
+        const el = document.getElementById(id);
+        return el ? String(el.value || '').trim() : '';
+      };
+
+      form.addEventListener('submit', function (event) {
+        event.preventDefault();
+        const payload = {
+          name: read('landing-request-name'),
+          contact: read('landing-request-contact'),
+          topic: read('landing-request-topic'),
+          description: read('landing-request-description'),
+          saved_at: Date.now(),
+          source: 'landing-request'
+        };
+
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+        } catch (error) {
+          console.warn('Cannot write request draft to localStorage', error);
+        }
+
+        window.location.href = '/login?from_request=1';
+      });
+    })();
+  </script>
 </body>
 </html>

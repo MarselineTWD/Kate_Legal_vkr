@@ -1,0 +1,330 @@
+{% extends "base.html" %}
+{% block title %}Сообщения{% endblock %}
+{% block content %}
+<section class="portal-page">
+  <div class="portal-page__header">
+    <div>
+      <div class="portal-page__eyebrow">Сообщения / чат</div>
+      <h1 class="portal-page__title">Коммуникация с юристом</h1>
+      <p class="portal-page__intro">
+        Выберите дело, чтобы продолжить переписку, сверить дедлайны и быстро перейти к документам по этому кейсу.
+      </p>
+    </div>
+  </div>
+
+  {% if sent %}
+  <div class="portal-alert portal-alert--success">
+    <strong>Сообщение отправлено.</strong>
+    <span>Ответственный юрист увидит его в рабочем кабинете.</span>
+  </div>
+  {% elif error == 'lawyer' %}
+  <div class="portal-alert portal-alert--warning">
+    <strong>Юрист ещё не назначен.</strong>
+    <span>Переписка станет доступна сразу после принятия обращения в работу.</span>
+  </div>
+  {% elif error == 'empty' %}
+  <div class="portal-alert portal-alert--danger">
+    <strong>Сообщение пустое.</strong>
+    <span>Введите текст перед отправкой.</span>
+  </div>
+  {% endif %}
+
+  {% if cases %}
+  <div class="chat-layout">
+    <aside class="portal-card portal-card--panel chat-cases">
+      <div class="portal-card__head">
+        <div>
+          <div class="portal-card__eyebrow">Дела</div>
+          <h2 class="portal-card__title">Выберите чат</h2>
+        </div>
+      </div>
+
+      <div class="chat-cases__list">
+        {% for chat in cases %}
+          {% set c = chat.case %}
+          {% if not c.intake_approved %}
+            {% set status_class = 'status-badge--warning' %}
+            {% set status_label = 'На проверке' %}
+          {% elif c.stage.value == 'COMPLETED' %}
+            {% set status_class = 'status-badge--success' %}
+            {% set status_label = stage_labels[c.stage] if stage_labels is defined else c.stage.value %}
+          {% else %}
+            {% set status_class = 'status-badge--brand' %}
+            {% set status_label = stage_labels[c.stage] if stage_labels is defined else c.stage.value %}
+          {% endif %}
+        <a href="/client/chat?case_id={{ c.id }}" class="chat-case{% if selected_case and c.id == selected_case.id %} is-active{% endif %}">
+          <div class="chat-case__top">
+            <strong>{{ c.case_number }}</strong>
+            <div class="chat-case__badges">
+              {% if chat.has_unread %}
+              <span class="status-badge status-badge--brand">{{ chat.unread_count }} new</span>
+              {% endif %}
+              <span class="status-badge {{ status_class }}">{{ status_label }}</span>
+            </div>
+          </div>
+          <h3>{{ c.title }}</h3>
+          <p>
+            {% if chat.last_message %}
+              {{ chat.last_message[:84] }}
+            {% elif c.deadline %}
+              Дедлайн {{ c.deadline.strftime('%d.%m.%Y') }}
+            {% else %}
+              Сообщений пока нет
+            {% endif %}
+          </p>
+          <small class="chat-case__time">
+            {% if chat.last_message_at %}
+              {{ chat.last_message_at.strftime('%d.%m.%Y %H:%M') }}
+            {% elif not c.intake_approved %}
+              Ожидает проверки
+            {% else %}
+              Юрист подключится после назначения
+            {% endif %}
+          </small>
+        </a>
+        {% endfor %}
+      </div>
+    </aside>
+
+    <div class="chat-main">
+      <article class="portal-card portal-card--panel chat-card">
+        <div class="chat-card__header">
+          <div>
+            <div class="portal-card__eyebrow">Выбранное дело</div>
+            <h2 class="portal-card__title">
+              {{ selected_case.case_number if selected_case else 'Дело не выбрано' }}
+              {% if selected_case %}— {{ selected_case.title }}{% endif %}
+            </h2>
+            <p class="chat-card__meta">
+              {% if assigned_lawyer %}
+                Юрист: {{ assigned_lawyer.full_name or assigned_lawyer.username }}
+              {% else %}
+                Юрист будет назначен после принятия обращения.
+              {% endif %}
+            </p>
+          </div>
+          {% if selected_case %}
+          
+          {% endif %}
+        </div>
+
+        <div class="chat-thread" id="client-chat-thread">
+          {% for item in messages %}
+          <article class="chat-bubble{% if item.is_from_client %} chat-bubble--client{% else %} chat-bubble--lawyer{% endif %}">
+            <div class="chat-bubble__meta">
+              <strong>{{ item.author }}</strong>
+              <time>{{ item.created_at.strftime('%d.%m.%Y %H:%M') if item.created_at else '-' }}</time>
+            </div>
+            <p>{{ item.message }}</p>
+          </article>
+          {% else %}
+          <div class="portal-empty portal-empty--compact">
+            <h3>Сообщений пока нет</h3>
+            <p>Начните переписку по выбранному делу, когда юрист будет назначен.</p>
+          </div>
+          {% endfor %}
+        </div>
+
+        <form method="post" action="/client/chat" class="chat-composer" id="client-chat-form">
+          {% if selected_case %}
+          <input type="hidden" name="legal_case_id" value="{{ selected_case.id }}" />
+          {% endif %}
+          <label class="portal-field chat-composer__field">
+            <span>Новое сообщение</span>
+            <textarea class="portal-control portal-control--textarea" name="message" rows="4" placeholder="Напишите вопрос юристу, уточнение по делу или комментарий к документам."></textarea>
+          </label>
+          <div class="chat-composer__footer">
+            <div class="chat-composer__hint">
+              {% if assigned_lawyer %}
+                Сообщения отправляются напрямую ответственному юристу по выбранному делу.
+              {% else %}
+                Отправка станет доступна после назначения ответственного юриста.
+              {% endif %}
+            </div>
+            <div class="chat-composer__actions">
+              {% if selected_case %}
+              <a href="/client/documents?case_id={{ selected_case.id }}#upload-document" class="portal-button portal-button--ghost">Загрузить файл</a>
+              {% endif %}
+              <button type="submit" class="portal-button portal-button--primary" {% if not selected_case or not assigned_lawyer %}disabled{% endif %}>
+                Отправить
+              </button>
+            </div>
+          </div>
+          <p class="chat-composer__feedback" id="client-chat-feedback" hidden></p>
+        </form>
+      </article>
+    </div>
+
+    <aside class="portal-aside chat-aside">
+      {% if selected_case %}
+      <article class="portal-card portal-card--panel">
+        <div class="portal-card__eyebrow">Карточка дела</div>
+        <h2 class="portal-card__title">{{ selected_case.case_number }}</h2>
+        <div class="detail-list">
+          <div class="detail-list__row">
+            <span>Статус</span>
+            <strong>
+              {% if selected_case.intake_approved %}
+                {{ stage_labels[selected_case.stage] if stage_labels is defined else selected_case.stage.value }}
+              {% else %}
+                На проверке
+              {% endif %}
+            </strong>
+          </div>
+          <div class="detail-list__row">
+            <span>Дедлайн</span>
+            <strong>{{ selected_case.deadline.strftime('%d.%m.%Y') if selected_case.deadline else 'Не назначен' }}</strong>
+          </div>
+          <div class="detail-list__row">
+            <span>Документы</span>
+            <strong>{{ selected_case_documents_count }}</strong>
+          </div>
+        </div>
+      </article>
+
+      <article class="portal-card portal-card--panel">
+        <div class="portal-card__eyebrow">Активные задачи</div>
+        <h2 class="portal-card__title">Ближайшие шаги по делу</h2>
+        <div class="task-mini-list">
+          {% for task in selected_case_pending_tasks %}
+            {% set days_left = (task.due_date - today).days %}
+          <article class="task-mini{% if days_left < 0 %} is-danger{% elif days_left <= 3 %} is-warning{% endif %}">
+            <div class="task-mini__top">
+              <strong>{{ task.title }}</strong>
+              <span>{{ task.due_date.strftime('%d.%m') }}</span>
+            </div>
+            <p>
+              {% if days_left < 0 %}
+                Срок просрочен
+              {% elif days_left == 0 %}
+                Срок сегодня
+              {% elif days_left == 1 %}
+                Срок завтра
+              {% else %}
+                До срока {{ days_left }} дн.
+              {% endif %}
+            </p>
+          </article>
+          {% else %}
+          <div class="portal-empty portal-empty--compact">
+            <h3>Нет активных задач</h3>
+            <p>По выбранному делу сейчас нет открытых задач с дедлайном.</p>
+          </div>
+          {% endfor %}
+        </div>
+      </article>
+      {% endif %}
+    </aside>
+  </div>
+  {% else %}
+  <div class="portal-empty">
+    <div class="portal-empty__icon">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-message"></use></svg>
+    </div>
+    <h3>Чаты появятся после первого обращения</h3>
+    <p>Создайте обращение, и как только по нему будет назначен юрист, вы сможете вести переписку прямо в кабинете.</p>
+    <a href="/client/intake" class="portal-button portal-button--primary">Подать обращение</a>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  (function () {
+    const thread = document.getElementById('client-chat-thread');
+    const form = document.getElementById('client-chat-form');
+    const feedback = document.getElementById('client-chat-feedback');
+    if (!thread) return;
+
+    const scrollToBottom = () => {
+      thread.scrollTop = thread.scrollHeight;
+      requestAnimationFrame(() => {
+        thread.scrollTop = thread.scrollHeight;
+      });
+    };
+
+    const renderMessage = (item) => {
+      const article = document.createElement('article');
+      article.className = `chat-bubble ${item.is_from_client ? 'chat-bubble--client' : 'chat-bubble--lawyer'}`;
+      article.innerHTML = `
+        <div class="chat-bubble__meta">
+          <strong>${item.author}</strong>
+          <time>${item.created_at}</time>
+        </div>
+        <p>${item.message}</p>
+      `;
+      return article;
+    };
+
+    scrollToBottom();
+
+    if (form) {
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const textarea = form.querySelector('textarea[name="message"]');
+        const submitButton = form.querySelector('button[type="submit"]');
+        if (!textarea || !submitButton) return;
+
+        const value = textarea.value.trim();
+        if (!value) {
+          if (feedback) {
+            feedback.hidden = false;
+            feedback.textContent = 'Введите текст сообщения.';
+            feedback.dataset.state = 'error';
+          }
+          return;
+        }
+
+        const originalLabel = submitButton.textContent;
+        submitButton.disabled = true;
+        submitButton.textContent = 'Отправляем...';
+        if (feedback) {
+          feedback.hidden = false;
+          feedback.textContent = 'Сообщение отправляется...';
+          feedback.dataset.state = 'pending';
+        }
+
+        try {
+          const response = await fetch(form.action, {
+            method: 'POST',
+            body: new FormData(form),
+            headers: {
+              'X-Requested-With': 'XMLHttpRequest',
+            },
+          });
+          if (!response.ok) {
+            const payload = await response.json().catch(() => ({}));
+            throw new Error(payload.detail || 'Не удалось отправить сообщение.');
+          }
+
+          const payload = await response.json();
+          if (payload.messages && Array.isArray(payload.messages)) {
+            thread.innerHTML = '';
+            payload.messages.forEach((item) => {
+              thread.appendChild(renderMessage(item));
+            });
+          }
+          textarea.value = '';
+          textarea.focus();
+          scrollToBottom();
+          if (feedback) {
+            feedback.hidden = false;
+            feedback.textContent = 'Сообщение отправлено.';
+            feedback.dataset.state = 'success';
+          }
+        } catch (error) {
+          if (feedback) {
+            feedback.hidden = false;
+            feedback.textContent = error.message || 'Ошибка отправки сообщения.';
+            feedback.dataset.state = 'error';
+          }
+        } finally {
+          submitButton.disabled = false;
+          submitButton.textContent = originalLabel;
+        }
+      });
+    }
+  })();
+</script>
+{% endblock %}

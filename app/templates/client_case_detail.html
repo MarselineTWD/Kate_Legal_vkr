@@ -1,0 +1,325 @@
+{% extends "base.html" %}
+{% block title %}{{ legal_case.case_number }} — дело{% endblock %}
+{% block content %}
+{% set detail = case_detail %}
+{% set overview = detail.overview %}
+{% set stats = detail.stats %}
+{% set has_deadline = legal_case.deadline is not none %}
+{% set current_state = 'status-badge--warning' if not legal_case.intake_approved else 'status-badge--success' if legal_case.stage.value == 'COMPLETED' else 'status-badge--danger' if overview.risk_level == 'high' else 'status-badge--brand' %}
+<section class="portal-page case-detail-page">
+  {% set page_error = request.query_params.get('error', '').strip() %}
+  {% if request.query_params.get('uploaded') == '1' %}
+  <div class="portal-alert portal-alert--success">
+    <strong>Документы загружены.</strong>
+    <span>Файлы добавлены к текущему делу.</span>
+  </div>
+  {% elif request.query_params.get('deleted') == '1' %}
+  <div class="portal-alert portal-alert--success">
+    <strong>Документ удален.</strong>
+    <span>Файл удален из текущего дела.</span>
+  </div>
+  {% elif page_error == 'duplicate' %}
+  <div class="portal-alert portal-alert--danger">
+    <strong>Обнаружены дубликаты.</strong>
+    <span>Документы с одинаковыми именами загружать нельзя.</span>
+  </div>
+  {% elif page_error == 'file' %}
+  <div class="portal-alert portal-alert--danger">
+    <strong>Не выбран файл.</strong>
+    <span>Перетащите или выберите хотя бы один документ.</span>
+  </div>
+  {% endif %}
+
+  <div class="portal-page__header">
+    <div>
+      <div class="portal-page__eyebrow">Подробный просмотр дела</div>
+      <h1 class="portal-page__title">Центр управления конкретным делом</h1>
+      <p class="portal-page__intro">
+        В этом представлении собраны прогресс, сроки, документы, коммуникация и ключевые действия по делу в одном месте.
+      </p>
+    </div>
+    <div class="portal-actions">
+      <a href="/client/cases" class="portal-button portal-button--secondary">Все дела</a>
+    </div>
+  </div>
+
+  <div class="case-detail-layout">
+    <main class="case-detail-main">
+      <article class="portal-card portal-card--hero case-hero">
+        <div class="case-hero__content">
+          <div class="case-hero__meta">
+            <span class="case-hero__number">{{ legal_case.case_number }}</span>
+            <span class="status-badge {{ current_state }}">
+              {% if not legal_case.intake_approved %}
+                На проверке
+              {% else %}
+                {{ detail.stage_label }}
+              {% endif %}
+            </span>
+          </div>
+
+          <h2 class="case-hero__title">{{ legal_case.title }}</h2>
+          <p class="case-hero__description">{{ legal_case.description or 'Описание ситуации будет отображено после уточнения деталей по делу.' }}</p>
+
+          <div class="case-hero__facts">
+            <div class="metric-chip">
+              <span>Дата создания</span>
+              <strong>{{ legal_case.opened_at.strftime('%d.%m.%Y') }}</strong>
+            </div>
+            <div class="metric-chip">
+              <span>Ответственный юрист</span>
+              <strong>{{ detail.assigned_lawyer.full_name or detail.assigned_lawyer.username if detail.assigned_lawyer else 'Будет назначен после проверки' }}</strong>
+            </div>
+            <div class="metric-chip">
+              <span>Стадия</span>
+              <strong>{{ detail.stage_label }}</strong>
+            </div>
+            <div class="metric-chip{% if has_deadline and overview.risk_level == 'high' %} metric-chip--danger{% elif has_deadline and overview.risk_level == 'medium' %} metric-chip--warning{% endif %}">
+              <span>{% if has_deadline %}Дедлайн{% else %}Срок{% endif %}</span>
+              <strong>
+                {% if has_deadline %}
+                  {{ legal_case.deadline.strftime('%d.%m.%Y') }}
+                {% elif not legal_case.intake_approved %}
+                  Ожидает проверки
+                {% else %}
+                  Будет установлен юристом
+                {% endif %}
+              </strong>
+            </div>
+          </div>
+        </div>
+
+        <aside class="case-hero__panel">
+          <div class="case-hero__panel-title">Требуется от клиента</div>
+          <div class="case-hero__panel-body{% if overview.requires_client_action %} is-accent{% endif %}">
+            <strong>
+              {% if overview.requires_client_action %}
+                Есть действия со стороны клиента
+              {% else %}
+                Всё под контролем
+              {% endif %}
+            </strong>
+            <p>{{ overview.client_expectation }}</p>
+          </div>
+          <div class="portal-actions portal-actions--column">
+            <a href="/client/chat?case_id={{ legal_case.id }}" class="portal-button portal-button--primary">Написать юристу</a>
+            <a href="/client/documents?case_id={{ legal_case.id }}#upload-document" class="portal-button portal-button--ghost">Загрузить документ</a>
+          </div>
+        </aside>
+      </article>
+
+    
+      <section id="events" class="case-section">
+        <div class="portal-card portal-card--panel">
+          <div class="portal-card__head">
+            <div>
+              <div class="portal-card__eyebrow">События и сроки</div>
+              <h2 class="portal-card__title">Ближайшие даты и напоминания</h2>
+            </div>
+          </div>
+          <div class="timeline-list">
+            {% for item in detail.event_items %}
+            <article class="timeline-item{% if item.urgency == 'danger' %} is-danger{% elif item.urgency == 'warning' %} is-warning{% endif %}">
+              <div class="timeline-item__date">
+                <strong>{{ item.date.strftime('%d') }}</strong>
+                <span>{{ item.date.strftime('%b') }}</span>
+                <small>{{ item.date.strftime('%Y') }}</small>
+              </div>
+              <div class="timeline-item__body">
+                <div class="timeline-item__top">
+                </div>
+                <h3>{{ item.title }}</h3>
+                {% if item.description %}
+                <p>{{ item.description }}</p>
+                {% endif %}
+              </div>
+            </article>
+            {% else %}
+            <div class="portal-empty portal-empty--compact">
+              <h3>Нет запланированных сроков</h3>
+              <p>Как только юрист добавит задачи, события или контрольные даты, они появятся здесь.</p>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+      </section>
+
+      <section id="overview" class="case-section">
+        <div class="portal-card portal-card--panel">
+          <div class="portal-card__head">
+            <div>
+              <div class="portal-card__eyebrow">Обзор</div>
+              <h2 class="portal-card__title">Ключевая информация по делу</h2>
+            </div>
+          </div>
+
+          <div class="overview-grid">
+            <article class="overview-panel">
+              <h3>Прогресс по этапам</h3>
+              <div class="stage-progress">
+                {% for step in detail.stage_progress %}
+                <div class="stage-progress__item is-{{ step.state }}">
+                  <span class="stage-progress__dot"></span>
+                  <div>
+                    <strong>{{ loop.index }}. {{ step.label }}</strong>
+                    <small>
+                      {% if step.state == 'done' %}
+                        Этап завершён
+                      {% elif step.state == 'current' %}
+                        Текущий этап
+                      {% else %}
+                        Следующий этап
+                      {% endif %}
+                    </small>
+                  </div>
+                </div>
+                {% endfor %}
+              </div>
+            </article>
+
+            <article class="overview-panel">
+              <h3>Последние документы</h3>
+              <div class="mini-feed">
+                {% for item in detail.latest_documents %}
+                <article class="mini-feed__item">
+                  <div class="mini-feed__row">
+                    <div>
+                      <strong>{{ item.name }}</strong>
+                      <p>{{ item.uploader_name }} • {{ item.created_at.strftime('%d.%m.%Y %H:%M') }}</p>
+                    </div>
+                    <div class="mini-feed__actions">
+                      <a href="/client/documents/{{ item.id }}/view" class="mini-feed__action" title="Открыть" target="_blank" rel="noopener">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-eye"></use></svg>
+                      </a>
+                      <form method="post" action="/client/documents/{{ item.id }}/delete">
+                        <input type="hidden" name="return_to" value="/client/cases/{{ legal_case.id }}#overview" />
+                        <button type="submit" class="mini-feed__action mini-feed__action--danger" title="Удалить">
+                          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-trash"></use></svg>
+                        </button>
+                      </form>
+                    </div>
+                  </div>
+                </article>
+                {% else %}
+                <form method="post" action="/client/documents/upload" class="portal-empty portal-empty--compact latest-documents-drop" enctype="multipart/form-data" data-upload-zone>
+                  <input type="hidden" name="legal_case_id" value="{{ legal_case.id }}" />
+                  <input type="hidden" name="return_to" value="/client/cases/{{ legal_case.id }}#overview" />
+                  <h3>Документов пока нет</h3>
+                  <p>Перетащите сюда документы или выберите вручную.</p>
+                  <label class="portal-button portal-button--secondary upload-zone__button">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-paperclip"></use></svg>
+                    <span>Выбрать файлы</span>
+                    <input class="upload-zone__input" type="file" name="documents" multiple required />
+                  </label>
+                  <small class="upload-zone__meta" data-upload-label>Файлы не выбраны</small>
+                  <ul class="upload-zone__pending" data-upload-pending hidden></ul>
+                  <button type="submit" class="portal-button portal-button--primary" data-upload-submit disabled>Загрузить документы</button>
+                </form>
+                {% endfor %}
+              </div>
+            </article>
+
+            <article class="overview-panel">
+              <h3>Действия клиента</h3>
+              <div class="action-list">
+                {% for task in detail.client_tasks %}
+                <article class="action-list__item">
+                  <strong>{{ task.title }}</strong>
+                  <p>{{ task.description or 'Требуется действие по делу' }}</p>
+                </article>
+                {% endfor %}
+                {% if not detail.client_tasks %}
+                <article class="action-list__item">
+                  <strong>Ничего не требуется</strong>
+                  <p>Юрист пока не запрашивал действий по этому делу.</p>
+                </article>
+                {% endif %}
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="progress" class="case-section">
+        <div class="portal-card portal-card--panel">
+          <div class="portal-card__head">
+            <div>
+              <div class="portal-card__eyebrow">Ход дела</div>
+              <h2 class="portal-card__title">Хронология развития дела</h2>
+            </div>
+          </div>
+          <div class="timeline-list timeline-list--detailed">
+            {% for item in detail.timeline %}
+            <article class="timeline-item">
+              <div class="timeline-item__date">
+                <strong>{{ item.date.strftime('%d') }}</strong>
+                <span>{{ item.date.strftime('%b') }}</span>
+                <small>{{ item.date.strftime('%H:%M') }}</small>
+              </div>
+              <div class="timeline-item__body">
+                <div class="timeline-item__top">
+                  <span class="timeline-item__distance">{{ item.actor }}</span>
+                </div>
+                <h3>{{ item.title }}</h3>
+                <p>{{ item.description }}</p>
+              </div>
+            </article>
+            {% endfor %}
+          </div>
+        </div>
+      </section>
+
+      <section id="participants" class="case-section">
+        <div class="portal-card portal-card--panel">
+          <div class="portal-card__head">
+            <div>
+              <div class="portal-card__eyebrow">Участники</div>
+              <h2 class="portal-card__title">Кто участвует в деле</h2>
+            </div>
+          </div>
+          <div class="participants-grid">
+            {% for item in detail.participants %}
+            <article class="participant-card">
+              <div class="participant-card__avatar">{{ item.initials }}</div>
+              <div class="participant-card__content">
+                <strong>{{ item.name }}</strong>
+                <span>{{ item.role }}</span>
+                <small>{{ item.meta }}</small>
+              </div>
+            </article>
+            {% endfor %}
+          </div>
+        </div>
+      </section>
+
+      {% if detail.finances %}
+      <section id="finances" class="case-section">
+        <div class="portal-card portal-card--panel">
+          <div class="portal-card__head">
+            <div>
+              <div class="portal-card__eyebrow">Финансы</div>
+              <h2 class="portal-card__title">Счета и оплаты по делу</h2>
+            </div>
+          </div>
+          <div class="finance-list">
+            {% for item in detail.finances %}
+            <article class="finance-row">
+              <div>
+                <strong>{{ item.number }}</strong>
+                <p>Оплатить до {{ item.due_date.strftime('%d.%m.%Y') }}</p>
+              </div>
+              <div class="finance-row__meta">
+                <strong>{{ '%.2f'|format(item.amount) }} ₽</strong>
+                <span class="status-badge status-badge--surface">{{ item.status }}</span>
+              </div>
+            </article>
+            {% endfor %}
+          </div>
+        </div>
+      </section>
+      {% endif %}
+
+    </main>
+  </div>
+</section>
+{% endblock %}

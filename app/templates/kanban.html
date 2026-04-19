@@ -14,8 +14,17 @@
         {% for c in grouped[st] %}
         {% set priority_key = (c.priority or "MEDIUM") %}
         {% set priority_label = {"LOW": "Низкий", "MEDIUM": "Средний", "HIGH": "Высокий"}.get(priority_key, priority_key) %}
+        {% set deadline_level = '' %}
+        {% if c.deadline and c.stage.value != "COMPLETED" %}
+          {% set days_left = (c.deadline - today).days %}
+          {% if days_left < 0 or (days_left >= 1 and days_left <= 3) %}
+            {% set deadline_level = 'urgent' %}
+          {% elif days_left >= 4 and days_left <= 7 %}
+            {% set deadline_level = 'warning' %}
+          {% endif %}
+        {% endif %}
         <article
-          class="card case-card"
+          class="card case-card {% if deadline_level %}case-card--deadline-{{ deadline_level }}{% endif %}"
           draggable="true"
           data-case-card
           data-case-id="{{ c.id }}"
@@ -51,7 +60,7 @@
             </div>
             <div class="case-card__meta-row">
               <dt>Дедлайн</dt>
-              <dd data-case-deadline-text>{{ c.deadline.strftime('%d.%m.%Y') if c.deadline else "Без дедлайна" }}</dd>
+              <dd class="{% if deadline_level %}case-card__deadline case-card__deadline--{{ deadline_level }}{% endif %}" data-case-deadline-text>{{ c.deadline.strftime('%d.%m.%Y') if c.deadline else "Без дедлайна" }}</dd>
             </div>
           </dl>
           <button type="button" class="case-card__open" data-case-open>Открыть карточку</button>

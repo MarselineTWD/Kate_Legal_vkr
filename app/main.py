@@ -1,12 +1,18 @@
 ﻿from __future__ import annotations
 
 from collections import defaultdict
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
+import html
+import io
+import mimetypes
 from pathlib import Path
+import secrets
 import re
+import zipfile
+from urllib.parse import quote
 
-from fastapi import Depends, FastAPI, Form, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
@@ -14,13 +20,14 @@ from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
 from .config import settings
-from .database import get_db
+from .database import SessionLocal, get_db
 from .models import (
     AuditLog,
     CalendarEvent,
     CaseComment,
     CaseStage,
     CaseTask,
+    CaseDocument,
     Client,
     ClientChatMessage,
     Invoice,
@@ -41,6 +48,8 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 app.mount("/site2static", StaticFiles(directory="app/site2"), name="site2static")
 templates = Jinja2Templates(directory="app/templates")
 SITE2_DIR = Path("app/site2")
+UPLOADS_DIR = Path("app/uploads")
+UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 @app.middleware("http")
@@ -54,11 +63,11 @@ async def disable_cache_in_debug(request: Request, call_next):
 
 
 STAGE_LABELS = {
-    CaseStage.NEW_REQUEST: "Новая заявка",
+    CaseStage.NEW_REQUEST: "Заявка принята",
     CaseStage.DOC_ANALYSIS: "Анализ документов",
-    CaseStage.DOC_PREPARATION: "Подготовка документов",
-    CaseStage.COURT: "Судебное производство",
-    CaseStage.COMPLETED: "Завершено",
+    CaseStage.DOC_PREPARATION: "Подготовка позиции",
+    CaseStage.COURT: "Процессуальные действия",
+    CaseStage.COMPLETED: "Завершение",
 }
 
 STATUS_LABELS = {
@@ -86,6 +95,7 @@ EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]{2,}$")
 def startup_event():
     create_schema()
     seed_data()
+    _migrate_legacy_documents_to_db()
 
 
 def current_user(request: Request, db: Session) -> User | None:
@@ -102,6 +112,20 @@ def require_auth(request: Request, db: Session) -> User:
     return user
 
 
+def require_admin(request: Request, db: Session) -> User:
+    user = require_auth(request, db)
+    if user.role != Role.ADMIN:
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
+    return user
+
+
+def require_staff(request: Request, db: Session) -> User:
+    user = require_auth(request, db)
+    if user.role == Role.CLIENT:
+        raise HTTPException(status_code=403, detail="Раздел доступен только сотрудникам")
+    return user
+
+
 def log_action(db: Session, user: User | None, action: str, details: str = "") -> None:
     db.add(AuditLog(user_id=user.id if user else None, action=action, details=details))
 
@@ -115,6 +139,34 @@ def find_user_by_email(db: Session, email: str) -> User | None:
         if (user.email or "").strip().lower() == normalized:
             return user
     return None
+
+
+def find_client_by_email(db: Session, email: str) -> Client | None:
+    normalized = email.strip().lower()
+    if not normalized:
+        return None
+    clients = db.scalars(select(Client)).all()
+    for client in clients:
+        if (client.email or "").strip().lower() == normalized:
+            return client
+    return None
+
+
+def find_client_for_user(db: Session, user: User) -> Client | None:
+    client = db.scalar(select(Client).where(Client.user_id == user.id))
+    if client:
+        return client
+    return find_client_by_email(db, user.email or "")
+
+
+def require_client_account(request: Request, db: Session) -> tuple[User, Client]:
+    user = require_auth(request, db)
+    if user.role != Role.CLIENT:
+        raise HTTPException(status_code=403, detail="Доступ только для клиентов")
+    client = find_client_for_user(db, user)
+    if not client:
+        raise HTTPException(status_code=404, detail="Карточка клиента не найдена")
+    return user, client
 
 
 def generate_unique_username(db: Session, email: str) -> str:
@@ -154,7 +206,7 @@ def infer_case_category(title: str, description: str, fallback: str) -> str:
         ("труд", "Трудовое право"),
         ("договор", "Договорная работа"),
         ("корпоратив", "Корпоративное право"),
-        ("суд", "Судебное производство"),
+        ("суд", "Процессуальное сопровождение"),
         ("задолж", "Взыскание задолженности"),
         ("претенз", "Претензионная работа"),
     ]
@@ -262,6 +314,7 @@ def build_case_workspace(db: Session, legal_case: LegalCase) -> dict:
         "Трудовое право": ["Трудовой договор", "Приказ/уведомление", "Расчет выплат"],
         "Договорная работа": ["Договор", "Переписка сторон", "Акт/накладная"],
         "Корпоративное право": ["Устав", "Протокол собрания", "Корпоративные решения"],
+        "Процессуальное сопровождение": ["Иск/отзыв", "Доказательства", "Доверенность"],
         "Судебное производство": ["Иск/отзыв", "Доказательства", "Доверенность"],
         "Взыскание задолженности": ["Претензия", "Расчет задолженности", "Подтверждающие платежи"],
         "Претензионная работа": ["Претензия", "Подтверждение отправки", "Расчет требований"],
@@ -398,6 +451,422 @@ def build_client_chat_payload(db: Session, client: Client) -> dict:
     }
 
 
+def case_stage_progress(legal_case: LegalCase) -> list[dict]:
+    steps = [
+        (CaseStage.NEW_REQUEST, "Заявка принята"),
+        (CaseStage.DOC_ANALYSIS, "Анализ документов"),
+        (CaseStage.DOC_PREPARATION, "Подготовка позиции"),
+        (CaseStage.COURT, "Процессуальные действия"),
+        (CaseStage.COMPLETED, "Завершение"),
+    ]
+    current_index = next((index for index, (stage, _) in enumerate(steps) if stage == legal_case.stage), 0)
+    progress = []
+    for index, (stage, label) in enumerate(steps):
+        progress.append(
+            {
+                "label": label,
+                "state": "current" if index == current_index else "done" if index < current_index else "upcoming",
+            }
+        )
+    return progress
+
+
+def detect_required_documents(legal_case: LegalCase, documents: list[CaseDocument]) -> list[str]:
+    category_text = infer_case_category(legal_case.title, legal_case.description or "", legal_case.category)
+    doc_map = {
+        "Трудовое право": ["Трудовой договор", "Приказ/уведомление", "Расчет выплат"],
+        "Договорная работа": ["Договор", "Переписка сторон", "Акт/накладная"],
+        "Корпоративное право": ["Устав", "Протокол собрания", "Корпоративные решения"],
+        "Процессуальное сопровождение": ["Иск/отзыв", "Доказательства", "Доверенность"],
+        "Судебное производство": ["Иск/отзыв", "Доказательства", "Доверенность"],
+        "Взыскание задолженности": ["Претензия", "Расчет задолженности", "Подтверждающие платежи"],
+        "Претензионная работа": ["Претензия", "Подтверждение отправки", "Расчет требований"],
+    }
+    recommendations = doc_map.get(
+        category_text,
+        ["Описание ситуации", "Подтверждающие документы", "Контактные данные клиента"],
+    )
+    uploaded_names = " ".join((item.original_filename or "").lower() for item in documents)
+    missing = [item for item in recommendations if item.lower() not in uploaded_names]
+    return missing[:4]
+
+
+def build_case_message_payload(
+    db: Session,
+    client: Client,
+    legal_case: LegalCase,
+    assigned_lawyer: User | None = None,
+) -> list[dict]:
+    lawyer = assigned_lawyer
+    if lawyer is None and legal_case.responsible_lawyer_id:
+        lawyer = db.get(User, legal_case.responsible_lawyer_id)
+    raw_messages = db.scalars(
+        select(ClientChatMessage)
+        .where(ClientChatMessage.client_id == client.id)
+        .where(ClientChatMessage.legal_case_id == legal_case.id)
+        .order_by(ClientChatMessage.created_at.asc(), ClientChatMessage.id.asc())
+    ).all()
+    payload = []
+    for item in raw_messages:
+        author = client.name if item.is_from_client else "Юрист"
+        if not item.is_from_client and lawyer and item.user_id == lawyer.id:
+            author = lawyer.full_name or lawyer.username
+        created_local = _to_local_naive(item.created_at) or item.created_at
+        payload.append(
+            {
+                "id": item.id,
+                "author": author,
+                "message": item.message,
+                "created_at": created_local,
+                "is_from_client": item.is_from_client,
+            }
+        )
+    return payload
+
+
+def build_case_chat_list(db: Session, client: Client, cases: list[LegalCase]) -> list[dict]:
+    users_map = {item.id: item for item in db.scalars(select(User)).all()}
+    payload = []
+    for legal_case in cases:
+        messages = db.scalars(
+            select(ClientChatMessage)
+            .where(ClientChatMessage.client_id == client.id)
+            .where(ClientChatMessage.legal_case_id == legal_case.id)
+            .order_by(ClientChatMessage.created_at.asc(), ClientChatMessage.id.asc())
+        ).all()
+        last_message = messages[-1] if messages else None
+        last_client_message_at = None
+        for item in reversed(messages):
+            if item.is_from_client:
+                last_client_message_at = item.created_at
+                break
+        unread_messages = [
+            item
+            for item in messages
+            if not item.is_from_client and (last_client_message_at is None or item.created_at > last_client_message_at)
+        ]
+        lawyer = users_map.get(legal_case.responsible_lawyer_id) if legal_case.responsible_lawyer_id else None
+        payload.append(
+            {
+                "case": legal_case,
+                "assigned_lawyer": lawyer,
+                "last_message": last_message.message if last_message else "",
+                "last_message_at": (_to_local_naive(last_message.created_at) if last_message else None),
+                "last_message_from_client": bool(last_message.is_from_client) if last_message else False,
+                "unread_count": len(unread_messages),
+                "has_unread": bool(unread_messages),
+            }
+        )
+    return payload
+
+
+def build_client_case_detail(db: Session, client: Client, legal_case: LegalCase) -> dict:
+    today = date.today()
+    assigned_lawyer = db.get(User, legal_case.responsible_lawyer_id) if legal_case.responsible_lawyer_id else None
+    tasks = db.scalars(
+        select(CaseTask).where(CaseTask.legal_case_id == legal_case.id).order_by(CaseTask.due_date.asc(), CaseTask.id.asc())
+    ).all()
+    documents = db.scalars(
+        select(CaseDocument)
+        .where(CaseDocument.legal_case_id == legal_case.id)
+        .order_by(CaseDocument.created_at.desc(), CaseDocument.id.desc())
+    ).all()
+    events = db.scalars(
+        select(CalendarEvent)
+        .where(CalendarEvent.legal_case_id == legal_case.id)
+        .order_by(CalendarEvent.starts_at.asc(), CalendarEvent.id.asc())
+    ).all()
+    invoices = db.scalars(
+        select(Invoice).where(Invoice.legal_case_id == legal_case.id).order_by(Invoice.due_date.desc(), Invoice.id.desc())
+    ).all()
+    messages = build_case_message_payload(db, client, legal_case, assigned_lawyer)
+
+    latest_staff_message_at = None
+    latest_client_message_at = None
+    for item in reversed(messages):
+        if item["is_from_client"] and latest_client_message_at is None:
+            latest_client_message_at = item["created_at"]
+        if not item["is_from_client"] and latest_staff_message_at is None:
+            latest_staff_message_at = item["created_at"]
+        if latest_staff_message_at and latest_client_message_at:
+            break
+    unread_messages = [
+        item
+        for item in messages
+        if not item["is_from_client"] and (latest_client_message_at is None or item["created_at"] > latest_client_message_at)
+    ]
+
+    open_tasks = [item for item in tasks if item.status != TaskStatus.DONE]
+    overdue_tasks = [item for item in open_tasks if item.due_date < today]
+    client_tasks = [
+        item
+        for item in open_tasks
+        if any(
+            keyword in f"{item.title} {item.description}".lower()
+            for keyword in ["клиент", "предостав", "прилож", "загруз", "уточн", "подтверд"]
+        )
+    ]
+    next_task = min(open_tasks, key=lambda item: item.due_date) if open_tasks else None
+    next_event = min(events, key=lambda item: item.starts_at) if events else None
+    next_milestone_date = None
+    if legal_case.deadline:
+        next_milestone_date = legal_case.deadline
+    elif next_task:
+        next_milestone_date = next_task.due_date
+    elif next_event:
+        next_milestone_date = next_event.starts_at.date()
+
+    # Client action list is now controlled only by lawyer/admin tasks.
+    required_docs: list[str] = []
+    requires_client_action = bool(client_tasks)
+    stage_label = STAGE_LABELS[legal_case.stage]
+    risk_level = "normal"
+    risk_text = "Сроки под контролем"
+    if overdue_tasks:
+        risk_level = "high"
+        risk_text = "Есть риск пропуска срока"
+    elif legal_case.deadline and (legal_case.deadline - today).days <= 3:
+        risk_level = "medium"
+        risk_text = "Ближайший срок наступает скоро"
+
+    status_summary_map = {
+        CaseStage.NEW_REQUEST: (
+            "Ваше обращение зарегистрировано и ожидает первичной проверки.",
+            "Администратор проверяет заявку и комплект документов.",
+            "После проверки обращение будет передано ответственному юристу.",
+        ),
+        CaseStage.DOC_ANALYSIS: (
+            "Юрист анализирует материалы и формирует правовую позицию.",
+            "Сейчас команда изучает документы и выделяет ключевые риски.",
+            "После анализа мы обозначим план действий и контрольные даты.",
+        ),
+        CaseStage.DOC_PREPARATION: (
+            "По делу готовятся документы и правовая позиция.",
+            "Юрист оформляет пакет материалов и согласовывает следующий шаг.",
+            "После подготовки документов дело перейдет к следующему процессуальному этапу.",
+        ),
+        CaseStage.COURT: (
+            "Дело находится на этапе процессуальных действий.",
+            "Юрист сопровождает заседания и контрольные процессуальные даты.",
+            "Следите за событиями и сроками: здесь появятся ближайшие заседания и запросы.",
+        ),
+        CaseStage.COMPLETED: (
+            "Работа по делу завершена.",
+            "Итоговые материалы и история взаимодействия доступны для просмотра.",
+            "При необходимости вы можете открыть новое обращение по связанному вопросу.",
+        ),
+    }
+    current_state, lawyer_next_step, nearest_stage = status_summary_map.get(
+        legal_case.stage,
+        ("Состояние дела обновляется.", "Юрист продолжает работу по делу.", "Следующий этап будет уточнен командой."),
+    )
+
+    if not legal_case.intake_approved:
+        current_state = "Обращение принято системой и ожидает первичной проверки."
+        lawyer_next_step = "Администратор проверит заявку и назначит ответственного юриста."
+        nearest_stage = "После проверки вы увидите переход к этапу анализа документов."
+
+    if client_tasks:
+        client_expectation = client_tasks[0].title
+    else:
+        client_expectation = "Ничего не требуется."
+
+    document_items = []
+    users_map = {item.id: item for item in db.scalars(select(User)).all()}
+    for item in documents:
+        uploader = users_map.get(item.uploaded_by_user_id) if item.uploaded_by_user_id else None
+        from_client = bool(item.uploaded_by_user_id == client.user_id)
+        uploader_name = client.name if from_client else ((uploader.full_name or uploader.username) if uploader else "Юрист")
+        file_ext = item.original_filename.rsplit(".", 1)[-1].upper() if "." in item.original_filename else "FILE"
+        created_local = _to_local_naive(item.created_at) or item.created_at
+        document_items.append(
+            {
+                "id": item.id,
+                "name": item.original_filename,
+                "ext": file_ext[:4],
+                "created_at": created_local,
+                "description": item.description,
+                "version": "Основная версия" if not item.description else item.description,
+                "uploader_name": uploader_name,
+                "source": "client" if from_client else "lawyer",
+            }
+        )
+
+    required_document_items: list[dict] = []
+
+    case_created_at = _to_local_naive(legal_case.created_at) or datetime.combine(legal_case.opened_at, datetime.min.time())
+    timeline = [
+        {
+            "date": case_created_at,
+            "type": "Создание",
+            "title": "Обращение создано",
+            "description": "Дело зарегистрировано в клиентском кабинете.",
+            "actor": client.name,
+            "status": "Система",
+        }
+    ]
+    for item in documents[:10]:
+        from_client = bool(item.uploaded_by_user_id == client.user_id)
+        item_date = _to_local_naive(item.created_at) or item.created_at
+        timeline.append(
+            {
+                "date": item_date,
+                "type": "Документ",
+                "title": "Документ загружен",
+                "description": item.original_filename,
+                "actor": client.name if from_client else "Юридическая команда",
+                "status": "Документ",
+            }
+        )
+    for item in events[:10]:
+        starts_local = _to_local_naive(item.starts_at) or item.starts_at
+        timeline.append(
+            {
+                "date": starts_local,
+                "type": "Событие",
+                "title": item.title,
+                "description": EVENT_TYPE_LABELS.get((item.event_type or "CUSTOM").upper(), "Событие"),
+                "actor": "Юридическая команда",
+                "status": "Событие",
+            }
+        )
+    timeline.sort(key=lambda item: item["date"], reverse=True)
+
+    changes = []
+    if legal_case.intake_approved:
+        changes.append(
+            {
+                "date": case_created_at,
+                "title": "Обращение принято в работу",
+                "description": "Карточка дела подтверждена и доступна в клиентском кабинете.",
+                "actor": "Система",
+            }
+        )
+    if legal_case.deadline:
+        changes.append(
+            {
+                "date": datetime.combine(legal_case.deadline, datetime.min.time()),
+                "title": "Добавлен контрольный срок",
+                "description": legal_case.deadline.strftime("%d.%m.%Y"),
+                "actor": assigned_lawyer.full_name if assigned_lawyer and assigned_lawyer.full_name else "Юрист",
+            }
+        )
+    for item in document_items[:6]:
+        changes.append(
+            {
+                "date": item["created_at"],
+                "title": "Добавлен документ",
+                "description": item["name"],
+                "actor": item["uploader_name"],
+            }
+        )
+    for item in messages[-6:]:
+        changes.append(
+            {
+                "date": item["created_at"],
+                "title": "Обновлена коммуникация",
+                "description": item["message"][:100],
+                "actor": item["author"],
+            }
+        )
+    changes.sort(key=lambda item: item["date"], reverse=True)
+
+    participants = [
+        {
+            "name": client.name,
+            "role": "Клиент",
+            "meta": client.email or client.phone or "Клиент кабинета",
+            "initials": (client.name or "К").strip()[:1],
+        }
+    ]
+    if assigned_lawyer:
+        participants.append(
+            {
+                "name": assigned_lawyer.full_name or assigned_lawyer.username,
+                "role": "Ответственный юрист",
+                "meta": assigned_lawyer.email or assigned_lawyer.specialization or "Юридическая команда",
+                "initials": (assigned_lawyer.full_name or assigned_lawyer.username or "Ю").strip()[:1],
+            }
+        )
+
+    event_items = []
+    for task in open_tasks[:8]:
+        event_items.append(
+            {
+                "kind": "Задача",
+                "title": task.title,
+                "description": (task.description or "").strip(),
+                "date": task.due_date,
+                "status": STATUS_LABELS.get(task.status, task.status.value),
+                "urgency": "danger" if task.due_date < today else "warning" if (task.due_date - today).days <= 3 else "normal",
+            }
+        )
+    for event in events[:8]:
+        starts_local = _to_local_naive(event.starts_at) or event.starts_at
+        starts_local_date = starts_local.date()
+        event_items.append(
+            {
+                "kind": EVENT_TYPE_LABELS.get((event.event_type or "CUSTOM").upper(), "Событие"),
+                "title": event.title,
+                "description": "",
+                "date": starts_local_date,
+                "status": "Запланировано",
+                "urgency": "warning" if 0 <= (starts_local_date - today).days <= 3 else "normal",
+            }
+        )
+    event_items.sort(key=lambda item: (item["date"], item["title"]))
+
+    latest_documents = document_items[:3]
+    latest_messages = list(reversed(messages[-3:]))
+    finances = [
+        {
+            "number": item.number,
+            "amount": float(item.amount),
+            "due_date": item.due_date,
+            "status": item.status,
+        }
+        for item in invoices
+    ]
+
+    return {
+        "case": legal_case,
+        "assigned_lawyer": assigned_lawyer,
+        "stage_label": stage_label,
+        "messages": messages,
+        "chat_unread_count": len(unread_messages),
+        "documents": document_items,
+        "required_documents": required_document_items,
+        "timeline": timeline[:16],
+        "changes": changes[:8],
+        "participants": participants,
+        "event_items": event_items[:10],
+        "latest_documents": latest_documents,
+        "latest_messages": latest_messages,
+        "finances": finances,
+        "tasks_open": open_tasks,
+        "client_tasks": client_tasks,
+        "overview": {
+            "current_state": current_state,
+            "lawyer_next_step": lawyer_next_step,
+            "client_expectation": client_expectation,
+            "nearest_stage": nearest_stage,
+            "risk_level": risk_level,
+            "risk_text": risk_text,
+            "requires_client_action": requires_client_action,
+            "next_milestone_date": next_milestone_date,
+        },
+        "stats": {
+            "documents_count": len(documents),
+            "messages_count": len(messages),
+            "changes_count": len(timeline),
+            "client_tasks_count": len(client_tasks),
+            "next_event": event_items[0] if event_items else None,
+        },
+        "stage_progress": case_stage_progress(legal_case),
+        "today": today,
+    }
+
+
 @app.get("/", response_class=HTMLResponse)
 def landing():
     return FileResponse(SITE2_DIR / "index.html")
@@ -493,6 +962,7 @@ def register(
     email: str = Form(...),
     password: str = Form(...),
     password_confirm: str = Form(...),
+    intake_flow: str = Form(""),
     db: Session = Depends(get_db),
 ):
     last_name = last_name.strip()
@@ -514,6 +984,8 @@ def register(
         error = "Введите корректный email."
     elif find_user_by_email(db, email):
         error = "Пользователь с таким email уже существует."
+    elif find_client_by_email(db, email):
+        error = "Клиент с таким email уже зарегистрирован."
     elif len(password) < 8:
         error = "Пароль должен содержать минимум 8 символов."
     elif not re.search(r"[A-ZА-ЯЁ]", password) or not re.search(r"[a-zа-яё]", password) or not re.search(r"\d", password):
@@ -531,12 +1003,25 @@ def register(
             phone=phone,
             email=email,
             password_hash=hash_password(password),
-            role=Role.LAWYER,
+            role=Role.CLIENT,
         )
         db.add(new_user)
-        log_action(db, new_user, "Регистрация пользователя", f"email={email}")
+        db.flush()
+        new_client = Client(
+            user_id=new_user.id,
+            name=full_name,
+            client_type="PERSON",
+            email=email,
+            phone=phone,
+            notes="Регистрация через форму входа",
+        )
+        db.add(new_client)
+        log_action(db, new_user, "Регистрация клиента", f"email={email}")
         db.commit()
-        return RedirectResponse("/login?registered=1", status_code=303)
+        request.session["user_id"] = new_user.id
+        if intake_flow.strip() == "1":
+            return RedirectResponse("/client/intake?prefill=1", status_code=303)
+        return RedirectResponse("/app", status_code=303)
 
     return templates.TemplateResponse(
         "login.html",
@@ -570,24 +1055,1080 @@ def logout(request: Request):
 def dashboard(request: Request, db: Session = Depends(get_db)):
     user = require_auth(request, db)
     today = datetime.now().date()
+    is_client = user.role == Role.CLIENT
 
-    tasks = db.scalars(select(CaseTask)).all()
-    overdue = [t for t in tasks if t.due_date < today and t.status != TaskStatus.DONE]
+    tasks: list[CaseTask] = []
+    overdue: list[CaseTask] = []
+    cases_count = 0
+    active_cases = 0
+    clients_count = 0
+    client_record = None
+
+    if is_client:
+        client_record = find_client_for_user(db, user)
+        client_cases = []
+        recent_messages = []
+        attention_items: list[str] = []
+        if client_record:
+            client_cases = db.scalars(
+                select(LegalCase).where(LegalCase.client_id == client_record.id).order_by(LegalCase.opened_at.desc(), LegalCase.id.desc())
+            ).all()
+        case_ids = [item.id for item in client_cases]
+        if case_ids:
+            tasks = db.scalars(select(CaseTask).where(CaseTask.legal_case_id.in_(case_ids))).all()
+        overdue = [t for t in tasks if t.due_date < today and t.status != TaskStatus.DONE]
+        cases_count = len(client_cases)
+        active_cases = len([c for c in client_cases if c.stage != CaseStage.COMPLETED])
+        clients_count = 1 if client_record else 0
+        case_ids = [item.id for item in client_cases]
+        recent_notifications = db.scalars(
+            select(Notification)
+            .where(Notification.recipient_id == user.id)
+            .order_by(Notification.is_read.asc(), Notification.created_at.desc(), Notification.id.desc())
+            .limit(8)
+        ).all()
+        unread_notifications = (
+            db.scalar(
+                select(func.count(Notification.id))
+                .where(Notification.recipient_id == user.id)
+                .where(Notification.is_read.is_(False))
+            )
+            or 0
+        )
+
+        upcoming_events = []
+        for task in sorted([t for t in tasks if t.status != TaskStatus.DONE], key=lambda t: t.due_date)[:8]:
+            upcoming_events.append(
+                {
+                    "date": task.due_date,
+                    "title": task.title,
+                    "kind": "TASK",
+                    "status": STATUS_LABELS.get(task.status, task.status.value),
+                }
+            )
+
+        if case_ids:
+            calendar_events = db.scalars(
+                select(CalendarEvent)
+                .where(CalendarEvent.legal_case_id.in_(case_ids))
+                .order_by(CalendarEvent.starts_at.asc(), CalendarEvent.id.asc())
+                .limit(8)
+            ).all()
+            for event in calendar_events:
+                upcoming_events.append(
+                    {
+                        "date": event.starts_at.date(),
+                        "title": event.title,
+                        "kind": "EVENT",
+                        "status": EVENT_TYPE_LABELS.get((event.event_type or "CUSTOM").upper(), "Событие"),
+                    }
+                )
+        upcoming_events.sort(key=lambda item: (item["date"], item["title"]))
+
+        if case_ids:
+            case_map = {item.id: item for item in client_cases}
+            lawyers_map = {item.id: item for item in db.scalars(select(User)).all()}
+            raw_messages = db.scalars(
+                select(ClientChatMessage)
+                .where(ClientChatMessage.client_id == client_record.id)
+                .where(ClientChatMessage.legal_case_id.in_(case_ids))
+                .order_by(ClientChatMessage.created_at.desc(), ClientChatMessage.id.desc())
+                .limit(6)
+            ).all()
+            for item in raw_messages:
+                legal_case = case_map.get(item.legal_case_id)
+                author = client_record.name if item.is_from_client else "Юрист"
+                if item.user_id and item.user_id in lawyers_map:
+                    lawyer = lawyers_map[item.user_id]
+                    author = lawyer.full_name or lawyer.username
+                recent_messages.append(
+                    {
+                        "author": author,
+                        "message": item.message,
+                        "created_at": item.created_at,
+                        "is_from_client": item.is_from_client,
+                        "case_number": legal_case.case_number if legal_case else "",
+                        "case_id": legal_case.id if legal_case else None,
+                        "case_title": legal_case.title if legal_case else "",
+                    }
+                )
+
+        pending_cases = [item for item in client_cases if not item.intake_approved]
+        if pending_cases:
+            attention_items.append(f"На проверке администратора: {len(pending_cases)}")
+        if overdue:
+            attention_items.append(f"Есть просроченные задачи: {len(overdue)}")
+        cases_without_lawyer = [
+            item for item in client_cases if item.intake_approved and item.stage != CaseStage.COMPLETED and not item.responsible_lawyer_id
+        ]
+        if cases_without_lawyer:
+            attention_items.append(f"Ожидают назначения юриста: {len(cases_without_lawyer)}")
+        imminent_cases = [
+            item
+            for item in client_cases
+            if item.deadline and item.stage != CaseStage.COMPLETED and 0 <= (item.deadline - today).days <= 5
+        ]
+        if imminent_cases:
+            attention_items.append(f"Близкие дедлайны в течение 5 дней: {len(imminent_cases)}")
+        if not attention_items:
+            attention_items.append("Критичных действий со стороны клиента сейчас не требуется")
+
+        return templates.TemplateResponse(
+            "client_dashboard.html",
+            {
+                "request": request,
+                "user": user,
+                "client": client_record,
+                "cases_count": cases_count,
+                "active_cases": active_cases,
+                "tasks_todo": len([t for t in tasks if t.status != TaskStatus.DONE]),
+                "overdue_tasks": len(overdue),
+                "my_cases": client_cases[:6],
+                "last_notifications": recent_notifications,
+                "unread_notifications": unread_notifications,
+                "upcoming_events": upcoming_events[:10],
+                "recent_messages": recent_messages,
+                "attention_items": attention_items,
+                "stage_labels": STAGE_LABELS,
+                "today": today,
+            },
+        )
+    else:
+        tasks = db.scalars(select(CaseTask)).all()
+        overdue = [t for t in tasks if t.due_date < today and t.status != TaskStatus.DONE]
+        cases_count = db.scalar(select(func.count(LegalCase.id))) or 0
+        active_cases = db.scalar(select(func.count(LegalCase.id)).where(LegalCase.stage != CaseStage.COMPLETED)) or 0
+        clients_count = db.scalar(select(func.count(Client.id))) or 0
+
+    lawyers = []
+    pending_intakes = []
+    intake_accepted = request.query_params.get("intake_accepted") == "1"
+    if user.role == Role.ADMIN:
+        lawyers = db.scalars(select(User).where(User.role == Role.LAWYER).order_by(User.full_name, User.username)).all()
+        pending_cases = db.scalars(
+            select(LegalCase)
+            .where(LegalCase.intake_approved.is_(False))
+            .order_by(LegalCase.opened_at.desc(), LegalCase.id.desc())
+        ).all()
+        for item in pending_cases:
+            recommendations = topsis_rank(item.category or "", lawyers)[:3]
+            pending_intakes.append(
+                {
+                    "case": item,
+                    "recommendations": recommendations,
+                }
+            )
 
     data = {
-        "cases_count": db.scalar(select(func.count(LegalCase.id))) or 0,
-        "active_cases": db.scalar(select(func.count(LegalCase.id)).where(LegalCase.stage != CaseStage.COMPLETED)) or 0,
-        "clients_count": db.scalar(select(func.count(Client.id))) or 0,
+        "cases_count": cases_count,
+        "active_cases": active_cases,
+        "clients_count": clients_count,
         "tasks_todo": len([t for t in tasks if t.status != TaskStatus.DONE]),
         "overdue_tasks": len(overdue),
         "recent_tasks": sorted(tasks, key=lambda t: t.due_date)[:8],
         "last_notifications": db.scalars(
             select(Notification)
+            .where(Notification.recipient_id == user.id)
             .order_by(Notification.is_read.asc(), Notification.created_at.desc(), Notification.id.desc())
             .limit(5)
         ).all(),
+        "lawyers": lawyers,
+        "pending_intakes": pending_intakes,
+        "intake_accepted": intake_accepted,
+        "lawyer_created": request.query_params.get("lawyer_created") == "1",
+        "lawyer_error": request.query_params.get("lawyer_error", "").strip(),
+        "is_client_dashboard": is_client,
     }
-    return templates.TemplateResponse("dashboard.html", {"request": request, **data, "user": user, "status_labels": STATUS_LABELS})
+    return templates.TemplateResponse(
+        "dashboard.html",
+        {"request": request, **data, "user": user, "status_labels": STATUS_LABELS, "today": today},
+    )
+
+
+@app.post("/admin/lawyers/new")
+def create_lawyer_by_admin(
+    request: Request,
+    last_name: str = Form(...),
+    first_name: str = Form(...),
+    middle_name: str = Form(""),
+    phone: str = Form(""),
+    email: str = Form(...),
+    specialization: str = Form(""),
+    password: str = Form(...),
+    password_confirm: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    admin = require_admin(request, db)
+    last_name = last_name.strip()
+    first_name = first_name.strip()
+    middle_name = middle_name.strip()
+    phone = phone.strip()
+    email = email.strip().lower()
+    specialization = specialization.strip()
+    full_name = " ".join([last_name, first_name, middle_name]).strip()
+
+    if not NAME_RE.fullmatch(last_name):
+        return RedirectResponse("/app?lawyer_error=invalid_last_name", status_code=303)
+    if not NAME_RE.fullmatch(first_name):
+        return RedirectResponse("/app?lawyer_error=invalid_first_name", status_code=303)
+    if middle_name and not NAME_RE.fullmatch(middle_name):
+        return RedirectResponse("/app?lawyer_error=invalid_middle_name", status_code=303)
+    if phone and (not PHONE_RE.fullmatch(phone) or not (10 <= len(re.sub(r"\D", "", phone)) <= 15)):
+        return RedirectResponse("/app?lawyer_error=invalid_phone", status_code=303)
+    if not EMAIL_RE.fullmatch(email):
+        return RedirectResponse("/app?lawyer_error=invalid_email", status_code=303)
+    if find_user_by_email(db, email):
+        return RedirectResponse("/app?lawyer_error=email_exists", status_code=303)
+    if len(password) < 8:
+        return RedirectResponse("/app?lawyer_error=short_password", status_code=303)
+    if not re.search(r"[A-ZА-ЯЁ]", password) or not re.search(r"[a-zа-яё]", password) or not re.search(r"\d", password):
+        return RedirectResponse("/app?lawyer_error=weak_password", status_code=303)
+    if password != password_confirm:
+        return RedirectResponse("/app?lawyer_error=password_mismatch", status_code=303)
+
+    username = generate_unique_username(db, email)
+    new_user = User(
+        username=username,
+        full_name=full_name,
+        first_name=first_name,
+        last_name=last_name,
+        middle_name=middle_name,
+        phone=phone,
+        email=email,
+        password_hash=hash_password(password),
+        role=Role.LAWYER,
+        specialization=specialization,
+    )
+    db.add(new_user)
+    log_action(db, admin, "Админ добавил юриста", f"{full_name} / {email}")
+    db.commit()
+    return RedirectResponse("/app?lawyer_created=1", status_code=303)
+
+
+def _pick_lawyer_for_case(db: Session) -> User | None:
+    return db.scalar(select(User).where(User.role == Role.LAWYER).order_by(User.current_load.asc(), User.id.asc()))
+
+
+def _find_client_user_for_case(db: Session, legal_case: LegalCase) -> User | None:
+    if not legal_case.client_id:
+        return None
+    client = db.get(Client, legal_case.client_id)
+    if not client:
+        return None
+    if client.user_id:
+        linked = db.get(User, client.user_id)
+        if linked and linked.role == Role.CLIENT:
+            return linked
+    candidate = find_user_by_email(db, client.email or "")
+    if candidate and candidate.role == Role.CLIENT:
+        return candidate
+    return None
+
+
+def _store_uploaded_file(uploaded_file: UploadFile) -> tuple[str, str, str, bytes]:
+    original_name = Path(uploaded_file.filename or "document.bin").name
+    suffix = Path(original_name).suffix
+    safe_suffix = suffix if len(suffix) <= 12 else ""
+    stored_name = f"{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(8)}{safe_suffix}"
+    file_bytes = uploaded_file.file.read()
+    mime_type = uploaded_file.content_type or "application/octet-stream"
+    return original_name, stored_name, mime_type, file_bytes
+
+
+def _migrate_legacy_documents_to_db() -> None:
+    db = SessionLocal()
+    try:
+        legacy_docs = db.scalars(
+            select(CaseDocument).where(CaseDocument.file_content.is_(None))
+        ).all()
+        changed = False
+        for item in legacy_docs:
+            path = UPLOADS_DIR / item.stored_filename
+            if not path.exists():
+                continue
+            file_bytes = path.read_bytes()
+            item.file_content = file_bytes
+            item.file_size = len(file_bytes)
+            if not item.mime_type:
+                item.mime_type = "application/octet-stream"
+            changed = True
+        if changed:
+            db.commit()
+    finally:
+        db.close()
+
+
+def _build_content_disposition(filename: str, inline: bool = False) -> str:
+    safe_name = filename or "document.bin"
+    ascii_fallback = "".join(ch if ord(ch) < 128 else "_" for ch in safe_name) or "document.bin"
+    encoded_name = quote(safe_name, safe="")
+    mode = "inline" if inline else "attachment"
+    return f"{mode}; filename=\"{ascii_fallback}\"; filename*=UTF-8''{encoded_name}"
+
+
+def _load_document_bytes(document: CaseDocument) -> tuple[bytes | None, str]:
+    if document.file_content:
+        mime_type = document.mime_type or mimetypes.guess_type(document.original_filename or "")[0] or "application/octet-stream"
+        return document.file_content, mime_type
+    path = UPLOADS_DIR / document.stored_filename
+    if not path.exists():
+        return None, "application/octet-stream"
+    file_bytes = path.read_bytes()
+    mime_type = document.mime_type or mimetypes.guess_type(document.original_filename or "")[0] or "application/octet-stream"
+    return file_bytes, mime_type
+
+
+def _extract_docx_text(file_bytes: bytes) -> str:
+    try:
+        with zipfile.ZipFile(io.BytesIO(file_bytes)) as archive:
+            xml_bytes = archive.read("word/document.xml")
+    except Exception:
+        return ""
+    xml_text = xml_bytes.decode("utf-8", errors="ignore")
+    xml_text = xml_text.replace("</w:p>", "\n").replace("<w:tab/>", "\t")
+    plain = re.sub(r"<[^>]+>", "", xml_text)
+    plain = html.unescape(plain)
+    lines = [line.strip() for line in plain.splitlines()]
+    return "\n".join(line for line in lines if line)
+
+
+def _to_local_naive(dt: datetime | None) -> datetime | None:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone().replace(tzinfo=None)
+
+
+def _safe_client_return_path(raw_path: str, fallback: str) -> str:
+    candidate = (raw_path or "").strip()
+    if candidate.startswith("/client/"):
+        return candidate
+    return fallback
+
+
+@app.post("/admin/intake/{case_id}/accept")
+def accept_client_intake(
+    case_id: int,
+    request: Request,
+    responsible_lawyer_id: int = Form(...),
+    priority: str = Form("MEDIUM"),
+    db: Session = Depends(get_db),
+):
+    admin = require_admin(request, db)
+    legal_case = db.get(LegalCase, case_id)
+    if not legal_case:
+        raise HTTPException(status_code=404, detail="Обращение не найдено")
+    if legal_case.intake_approved:
+        return RedirectResponse("/app?intake_accepted=1", status_code=303)
+
+    lawyer = db.get(User, responsible_lawyer_id)
+    if not lawyer or lawyer.role != Role.LAWYER:
+        raise HTTPException(status_code=400, detail="Выбран некорректный юрист")
+
+    priority_value = (priority or "MEDIUM").strip().upper()
+    if priority_value not in {"LOW", "MEDIUM", "HIGH"}:
+        priority_value = "MEDIUM"
+
+    legal_case.responsible_lawyer_id = lawyer.id
+    legal_case.priority = priority_value
+    legal_case.intake_approved = True
+    if lawyer not in legal_case.lawyers:
+        legal_case.lawyers.append(lawyer)
+
+    db.add(
+        CaseTask(
+            legal_case_id=legal_case.id,
+            title="Первичный разбор обращения клиента",
+            description="Создано администратором при принятии обращения.",
+            due_date=date.today() + timedelta(days=1),
+            status=TaskStatus.TODO,
+            priority="HIGH",
+            assignee_id=lawyer.id,
+        )
+    )
+
+    db.add(
+        Notification(
+            recipient_id=lawyer.id,
+            title="Обращение принято и назначено вам",
+            message=f"{legal_case.case_number}: {legal_case.title}",
+        )
+    )
+    client_user = _find_client_user_for_case(db, legal_case)
+    if client_user:
+        db.add(
+            Notification(
+                recipient_id=client_user.id,
+                title="Ваше обращение принято",
+                message=f"{legal_case.case_number}: обращение принято в работу. Назначен юрист: {lawyer.full_name or lawyer.username}",
+            )
+        )
+
+    log_action(db, admin, "Принято обращение клиента", f"{legal_case.case_number} -> {lawyer.full_name or lawyer.username}")
+    db.commit()
+    return RedirectResponse("/app?intake_accepted=1", status_code=303)
+
+
+@app.get("/client/profile", response_class=HTMLResponse)
+def client_profile_page(request: Request, db: Session = Depends(get_db)):
+    user, client = require_client_account(request, db)
+    # Backward-compatible fallback: if old requisites were stored as one field,
+    # show them in "other details" until user edits the split requisites fields.
+    if not (client.inn or client.ogrn or client.bank_details or client.passport_details or client.other_details):
+        client.other_details = (client.requisites or "").strip()
+    return templates.TemplateResponse(
+        "client_profile.html",
+        {
+            "request": request,
+            "user": user,
+            "client": client,
+            "saved": request.query_params.get("saved") == "1",
+            "error": request.query_params.get("error", "").strip(),
+        },
+    )
+
+
+@app.post("/client/profile")
+def client_profile_update(
+    request: Request,
+    name: str = Form(...),
+    email: str = Form(...),
+    phone: str = Form(""),
+    address: str = Form(""),
+    inn: str = Form(""),
+    ogrn: str = Form(""),
+    bank_details: str = Form(""),
+    passport_details: str = Form(""),
+    other_details: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    user, client = require_client_account(request, db)
+    cleaned_email = email.strip().lower()
+    if not EMAIL_RE.fullmatch(cleaned_email):
+        return RedirectResponse("/client/profile?error=email", status_code=303)
+    existing_user = find_user_by_email(db, cleaned_email)
+    if existing_user and existing_user.id != user.id:
+        return RedirectResponse("/client/profile?error=email_exists", status_code=303)
+
+    client.name = name.strip()
+    client.email = cleaned_email
+    client.phone = phone.strip()
+    client.address = address.strip()
+    client.inn = re.sub(r"\D", "", inn)[:12]
+    client.ogrn = re.sub(r"\D", "", ogrn)[:15]
+    client.bank_details = bank_details.strip()
+    client.passport_details = passport_details.strip()
+    client.other_details = other_details.strip()
+    client.requisites = "\n".join(
+        part
+        for part in [
+            f"ИНН: {client.inn}" if client.inn else "",
+            f"ОГРН: {client.ogrn}" if client.ogrn else "",
+            f"Банковские реквизиты: {client.bank_details}" if client.bank_details else "",
+            f"Паспортные данные: {client.passport_details}" if client.passport_details else "",
+            f"Иные сведения: {client.other_details}" if client.other_details else "",
+        ]
+        if part
+    )
+
+    user.full_name = client.name
+    user.email = cleaned_email
+    user.phone = client.phone
+    db.add(
+        Notification(
+            recipient_id=user.id,
+            title="Профиль обновлен",
+            message="Данные профиля клиента успешно сохранены",
+        )
+    )
+    db.commit()
+    return RedirectResponse("/client/profile?saved=1", status_code=303)
+
+
+@app.get("/client/intake", response_class=HTMLResponse)
+def client_intake_page(request: Request, db: Session = Depends(get_db)):
+    user, client = require_client_account(request, db)
+    return templates.TemplateResponse(
+        "client_intake.html",
+        {
+            "request": request,
+            "user": user,
+            "client": client,
+            "created": request.query_params.get("created") == "1",
+            "today": date.today(),
+        },
+    )
+
+
+@app.post("/client/intake")
+def client_intake_submit(
+    request: Request,
+    case_title: str = Form(...),
+    category: str = Form(...),
+    message: str = Form(""),
+    documents: list[UploadFile] = File(default=[]),
+    db: Session = Depends(get_db),
+):
+    user, client = require_client_account(request, db)
+
+    legal_case = LegalCase(
+        case_number=next_case_number(db),
+        title=case_title.strip(),
+        category=category.strip() or "Общее",
+        description=message.strip(),
+        stage=CaseStage.NEW_REQUEST,
+        priority="MEDIUM",
+        intake_approved=False,
+        opened_at=date.today(),
+        deadline=None,
+        client_id=client.id,
+        responsible_lawyer_id=None,
+    )
+    db.add(legal_case)
+    db.flush()
+
+    for uploaded in documents:
+        if not uploaded.filename:
+            continue
+        original_name, stored_name, mime_type, file_bytes = _store_uploaded_file(uploaded)
+        db.add(
+            CaseDocument(
+                legal_case_id=legal_case.id,
+                uploaded_by_user_id=user.id,
+                original_filename=original_name,
+                stored_filename=stored_name,
+                mime_type=mime_type,
+                file_size=len(file_bytes),
+                file_content=file_bytes,
+                description="Документ из формы подачи обращения",
+            )
+        )
+
+    admins = db.scalars(select(User).where(User.role == Role.ADMIN)).all()
+    for admin in admins:
+        db.add(
+            Notification(
+                recipient_id=admin.id,
+                title="Новое обращение клиента",
+                message=f"{legal_case.case_number}: {legal_case.title}",
+            )
+        )
+    db.add(
+        Notification(
+            recipient_id=user.id,
+            title="Заявка отправлена",
+            message=f"Обращение {legal_case.case_number} отправлено и ожидает проверки администратором",
+        )
+    )
+    log_action(db, user, "Клиент подал обращение", f"{legal_case.case_number}: {legal_case.title}")
+    db.commit()
+    return RedirectResponse("/client/intake?created=1", status_code=303)
+
+
+@app.get("/client/cases", response_class=HTMLResponse)
+def client_cases_page(request: Request, db: Session = Depends(get_db)):
+    user, client = require_client_account(request, db)
+    my_cases = db.scalars(
+        select(LegalCase).where(LegalCase.client_id == client.id).order_by(LegalCase.opened_at.desc(), LegalCase.id.desc())
+    ).all()
+    case_ids = [item.id for item in my_cases]
+    tasks = []
+    documents = []
+    if case_ids:
+        tasks = db.scalars(select(CaseTask).where(CaseTask.legal_case_id.in_(case_ids))).all()
+        documents = db.scalars(select(CaseDocument).where(CaseDocument.legal_case_id.in_(case_ids))).all()
+
+    task_stats = {}
+    for legal_case in my_cases:
+        case_tasks = [item for item in tasks if item.legal_case_id == legal_case.id]
+        done_tasks = [item for item in case_tasks if item.status == TaskStatus.DONE]
+        overdue_tasks = [item for item in case_tasks if item.status != TaskStatus.DONE and item.due_date < date.today()]
+        next_task = None
+        pending_tasks = [item for item in case_tasks if item.status != TaskStatus.DONE]
+        if pending_tasks:
+            next_task = min(pending_tasks, key=lambda item: item.due_date)
+        task_stats[legal_case.id] = {
+            "total": len(case_tasks),
+            "done": len(done_tasks),
+            "overdue": len(overdue_tasks),
+            "next_due": next_task.due_date if next_task else None,
+        }
+
+    document_counts = {item.id: 0 for item in my_cases}
+    for document in documents:
+        document_counts[document.legal_case_id] = document_counts.get(document.legal_case_id, 0) + 1
+
+    chat_state = {item["case"].id: item for item in build_case_chat_list(db, client, my_cases)}
+
+    return templates.TemplateResponse(
+        "client_cases.html",
+        {
+            "request": request,
+            "user": user,
+            "client": client,
+            "cases": my_cases,
+            "task_stats": task_stats,
+            "document_counts": document_counts,
+            "chat_state": chat_state,
+            "stage_labels": STAGE_LABELS,
+            "today": date.today(),
+        },
+    )
+
+
+@app.get("/client/cases/{case_id}", response_class=HTMLResponse)
+def client_case_detail_page(case_id: int, request: Request, db: Session = Depends(get_db)):
+    user, client = require_client_account(request, db)
+    legal_case = db.get(LegalCase, case_id)
+    if not legal_case or legal_case.client_id != client.id:
+        raise HTTPException(status_code=404, detail="Дело не найдено")
+
+    my_cases = db.scalars(
+        select(LegalCase).where(LegalCase.client_id == client.id).order_by(LegalCase.opened_at.desc(), LegalCase.id.desc())
+    ).all()
+    chat_list = build_case_chat_list(db, client, my_cases)
+    chat_index = {item["case"].id: item for item in chat_list}
+    detail = build_client_case_detail(db, client, legal_case)
+    return templates.TemplateResponse(
+        "client_case_detail.html",
+        {
+            "request": request,
+            "user": user,
+            "client": client,
+            "legal_case": legal_case,
+            "case_detail": detail,
+            "chat_list": chat_list,
+            "active_chat": chat_index.get(legal_case.id),
+            "stage_labels": STAGE_LABELS,
+            "status_labels": STATUS_LABELS,
+        },
+    )
+
+
+@app.get("/client/documents", response_class=HTMLResponse)
+def client_documents_page(request: Request, case_id: int | None = None, db: Session = Depends(get_db)):
+    user, client = require_client_account(request, db)
+    my_cases = db.scalars(
+        select(LegalCase).where(LegalCase.client_id == client.id).order_by(LegalCase.opened_at.desc(), LegalCase.id.desc())
+    ).all()
+    selected_case_id = next((item.id for item in my_cases if item.id == case_id), None)
+    case_ids = [item.id for item in my_cases]
+    documents = []
+    if case_ids:
+        documents = db.scalars(
+            select(CaseDocument)
+            .where(CaseDocument.legal_case_id.in_(case_ids))
+            .order_by(CaseDocument.created_at.desc(), CaseDocument.id.desc())
+        ).all()
+    case_map = {item.id: item for item in my_cases}
+    return templates.TemplateResponse(
+        "client_documents.html",
+        {
+            "request": request,
+            "user": user,
+            "client": client,
+            "cases": my_cases,
+            "case_map": case_map,
+            "documents": documents,
+            "uploaded": request.query_params.get("uploaded") == "1",
+            "deleted": request.query_params.get("deleted") == "1",
+            "error": request.query_params.get("error", "").strip(),
+            "selected_case_id": selected_case_id,
+        },
+    )
+
+
+@app.post("/client/documents/upload")
+def client_documents_upload(
+    request: Request,
+    legal_case_id: int = Form(...),
+    description: str = Form(""),
+    return_to: str = Form(""),
+    documents: list[UploadFile] = File(default=[]),
+    db: Session = Depends(get_db),
+):
+    user, client = require_client_account(request, db)
+    legal_case = db.get(LegalCase, legal_case_id)
+    if not legal_case or legal_case.client_id != client.id:
+        raise HTTPException(status_code=404, detail="Дело не найдено")
+    default_redirect = f"/client/documents?case_id={legal_case.id}"
+    redirect_base = _safe_client_return_path(return_to, default_redirect)
+    valid_documents = [item for item in documents if item and item.filename]
+    if not valid_documents:
+        separator = "&" if "?" in redirect_base else "?"
+        return RedirectResponse(f"{redirect_base}{separator}error=file", status_code=303)
+
+    existing_names = {
+        (name or "").strip().lower()
+        for name in db.scalars(
+            select(CaseDocument.original_filename)
+            .join(LegalCase, CaseDocument.legal_case_id == LegalCase.id)
+            .where(LegalCase.client_id == client.id)
+        ).all()
+        if (name or "").strip()
+    }
+    batch_names: set[str] = set()
+    duplicate_names: set[str] = set()
+    for document in valid_documents:
+        normalized = (document.filename or "").strip().lower()
+        if not normalized:
+            continue
+        if normalized in existing_names or normalized in batch_names:
+            duplicate_names.add(document.filename or normalized)
+        batch_names.add(normalized)
+    if duplicate_names:
+        separator = "&" if "?" in redirect_base else "?"
+        return RedirectResponse(f"{redirect_base}{separator}error=duplicate", status_code=303)
+
+    uploaded_names: list[str] = []
+    for document in valid_documents:
+        original_name, stored_name, mime_type, file_bytes = _store_uploaded_file(document)
+        uploaded_names.append(original_name)
+        db.add(
+            CaseDocument(
+                legal_case_id=legal_case.id,
+                uploaded_by_user_id=user.id,
+                original_filename=original_name,
+                stored_filename=stored_name,
+                mime_type=mime_type,
+                file_size=len(file_bytes),
+                file_content=file_bytes,
+                description=description.strip(),
+            )
+        )
+
+    uploaded_count = len(uploaded_names)
+    first_name = uploaded_names[0]
+    summary = first_name if uploaded_count == 1 else f"{first_name} и еще {uploaded_count - 1}"
+    if legal_case.responsible_lawyer_id:
+        db.add(
+            Notification(
+                recipient_id=legal_case.responsible_lawyer_id,
+                title="Клиент добавил документы" if uploaded_count > 1 else "Клиент добавил документ",
+                message=f"{legal_case.case_number}: {summary}",
+            )
+        )
+    db.add(
+        Notification(
+            recipient_id=user.id,
+            title="Документы загружены" if uploaded_count > 1 else "Документ загружен",
+            message=f"К делу {legal_case.case_number} прикреплено файлов: {uploaded_count}",
+        )
+    )
+    db.commit()
+    separator = "&" if "?" in redirect_base else "?"
+    return RedirectResponse(f"{redirect_base}{separator}uploaded=1", status_code=303)
+
+
+@app.post("/client/documents/{document_id}/delete")
+def client_document_delete(
+    document_id: int,
+    request: Request,
+    return_to: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    user, client = require_client_account(request, db)
+    wants_json = (
+        request.headers.get("x-requested-with", "").lower() == "xmlhttprequest"
+        or "application/json" in request.headers.get("accept", "").lower()
+    )
+    document = db.get(CaseDocument, document_id)
+    if not document:
+        if wants_json:
+            return JSONResponse({"ok": False, "error": "document_not_found"}, status_code=404)
+        return RedirectResponse("/client/documents?error=document", status_code=303)
+
+    legal_case = db.get(LegalCase, document.legal_case_id)
+    if not legal_case or legal_case.client_id != client.id:
+        raise HTTPException(status_code=403, detail="Нет доступа к документу")
+    default_redirect = f"/client/documents?case_id={legal_case.id}"
+    redirect_base = _safe_client_return_path(return_to, default_redirect)
+
+    # Backward compatibility: if old documents still have files on disk, clean them too.
+    file_path = UPLOADS_DIR / (document.stored_filename or "")
+    if file_path.name and file_path.exists():
+        try:
+            file_path.unlink()
+        except OSError:
+            pass
+
+    document_name = document.original_filename or "документ"
+    db.delete(document)
+    db.add(
+        Notification(
+            recipient_id=user.id,
+            title="Документ удален",
+            message=f"Файл «{document_name}» удален из дела {legal_case.case_number}",
+        )
+    )
+    if legal_case.responsible_lawyer_id:
+        db.add(
+            Notification(
+                recipient_id=legal_case.responsible_lawyer_id,
+                title="Клиент удалил документ",
+                message=f"{legal_case.case_number}: {document_name}",
+            )
+        )
+    db.commit()
+    if wants_json:
+        return JSONResponse({"ok": True, "deleted_id": document_id})
+    separator = "&" if "?" in redirect_base else "?"
+    return RedirectResponse(f"{redirect_base}{separator}deleted=1", status_code=303)
+
+
+@app.get("/client/documents/{document_id}/download")
+def client_document_download(document_id: int, request: Request, db: Session = Depends(get_db)):
+    user, client = require_client_account(request, db)
+    document = db.get(CaseDocument, document_id)
+    if not document:
+        raise HTTPException(status_code=404, detail="Документ не найден")
+    legal_case = db.get(LegalCase, document.legal_case_id)
+    if not legal_case or legal_case.client_id != client.id:
+        raise HTTPException(status_code=403, detail="Нет доступа к документу")
+    file_bytes, mime_type = _load_document_bytes(document)
+    if file_bytes is None:
+        raise HTTPException(status_code=404, detail="Файл не найден")
+    headers = {"Content-Disposition": _build_content_disposition(document.original_filename or "document.bin")}
+    return Response(content=file_bytes, media_type=mime_type, headers=headers)
+
+
+@app.get("/client/documents/{document_id}/view", response_class=HTMLResponse)
+def client_document_view(document_id: int, request: Request, db: Session = Depends(get_db)):
+    user, client = require_client_account(request, db)
+    document = db.get(CaseDocument, document_id)
+    if not document:
+        raise HTTPException(status_code=404, detail="Документ не найден")
+    legal_case = db.get(LegalCase, document.legal_case_id)
+    if not legal_case or legal_case.client_id != client.id:
+        raise HTTPException(status_code=403, detail="Нет доступа к документу")
+
+    file_bytes, mime_type = _load_document_bytes(document)
+    if file_bytes is None:
+        raise HTTPException(status_code=404, detail="Файл не найден")
+
+    original_name = document.original_filename or "document.bin"
+    suffix = Path(original_name).suffix.lower()
+
+    if mime_type == "application/pdf" or mime_type.startswith("image/"):
+        headers = {"Content-Disposition": _build_content_disposition(original_name, inline=True)}
+        return Response(content=file_bytes, media_type=mime_type, headers=headers)
+
+    if mime_type.startswith("text/") or suffix in {".txt", ".md", ".csv", ".json", ".xml", ".log", ".ini"}:
+        text_preview = file_bytes.decode("utf-8", errors="replace")
+        return templates.TemplateResponse(
+            "client_document_preview.html",
+            {
+                "request": request,
+                "user": user,
+                "client": client,
+                "document": document,
+                "preview_title": original_name,
+                "preview_text": text_preview,
+                "preview_supported": True,
+            },
+        )
+
+    if suffix == ".docx":
+        text_preview = _extract_docx_text(file_bytes)
+        return templates.TemplateResponse(
+            "client_document_preview.html",
+            {
+                "request": request,
+                "user": user,
+                "client": client,
+                "document": document,
+                "preview_title": original_name,
+                "preview_text": text_preview or "Не удалось извлечь текст из файла DOCX.",
+                "preview_supported": bool(text_preview),
+            },
+        )
+
+    return templates.TemplateResponse(
+        "client_document_preview.html",
+        {
+            "request": request,
+            "user": user,
+            "client": client,
+            "document": document,
+            "preview_title": original_name,
+            "preview_text": "",
+            "preview_supported": False,
+        },
+    )
+
+
+@app.get("/client/chat", response_class=HTMLResponse)
+def client_chat_page(request: Request, case_id: int | None = None, db: Session = Depends(get_db)):
+    user, client = require_client_account(request, db)
+    my_cases = db.scalars(
+        select(LegalCase).where(LegalCase.client_id == client.id).order_by(LegalCase.opened_at.desc(), LegalCase.id.desc())
+    ).all()
+    selected_case = None
+    if my_cases:
+        selected_case = next((item for item in my_cases if item.id == case_id), my_cases[0])
+
+    chat_list = build_case_chat_list(db, client, my_cases)
+    chat_index = {item["case"].id: item for item in chat_list}
+    messages = []
+    assigned_lawyer = None
+    selected_case_pending_tasks = []
+    selected_case_documents_count = 0
+    if selected_case:
+        assigned_lawyer = db.get(User, selected_case.responsible_lawyer_id) if selected_case.responsible_lawyer_id else None
+        messages = build_case_message_payload(db, client, selected_case, assigned_lawyer)
+        selected_case_pending_tasks = db.scalars(
+            select(CaseTask)
+            .where(CaseTask.legal_case_id == selected_case.id)
+            .where(CaseTask.status != TaskStatus.DONE)
+            .order_by(CaseTask.due_date.asc(), CaseTask.id.asc())
+            .limit(4)
+        ).all()
+        selected_case_documents_count = (
+            db.scalar(select(func.count(CaseDocument.id)).where(CaseDocument.legal_case_id == selected_case.id)) or 0
+        )
+
+    return templates.TemplateResponse(
+        "client_chat.html",
+        {
+            "request": request,
+            "user": user,
+            "client": client,
+            "cases": chat_list,
+            "selected_case": selected_case,
+            "assigned_lawyer": assigned_lawyer,
+            "messages": messages,
+            "sent": request.query_params.get("sent") == "1",
+            "error": request.query_params.get("error", "").strip(),
+            "selected_case_pending_tasks": selected_case_pending_tasks,
+            "selected_case_documents_count": selected_case_documents_count,
+            "stage_labels": STAGE_LABELS,
+            "active_chat": chat_index.get(selected_case.id) if selected_case else None,
+            "today": date.today(),
+        },
+    )
+
+
+@app.post("/client/chat")
+def client_chat_send(
+    request: Request,
+    legal_case_id: int = Form(...),
+    message: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    user, client = require_client_account(request, db)
+    legal_case = db.get(LegalCase, legal_case_id)
+    if not legal_case or legal_case.client_id != client.id:
+        raise HTTPException(status_code=404, detail="Дело не найдено")
+    if not legal_case.responsible_lawyer_id:
+        if request.headers.get("x-requested-with") == "XMLHttpRequest":
+            raise HTTPException(status_code=400, detail="Юрист еще не назначен")
+        return RedirectResponse(f"/client/chat?case_id={legal_case_id}&error=lawyer", status_code=303)
+    text = message.strip()
+    if not text:
+        if request.headers.get("x-requested-with") == "XMLHttpRequest":
+            raise HTTPException(status_code=400, detail="Сообщение не может быть пустым")
+        return RedirectResponse(f"/client/chat?case_id={legal_case_id}&error=empty", status_code=303)
+
+    new_message = ClientChatMessage(
+        client_id=client.id,
+        legal_case_id=legal_case.id,
+        user_id=None,
+        message=text,
+        is_from_client=True,
+    )
+    db.add(new_message)
+    db.commit()
+    assigned_lawyer = db.get(User, legal_case.responsible_lawyer_id) if legal_case.responsible_lawyer_id else None
+    messages = build_case_message_payload(db, client, legal_case, assigned_lawyer)
+
+    if request.headers.get("x-requested-with") == "XMLHttpRequest":
+        return JSONResponse(
+            {
+                "ok": True,
+                "message": {
+                    "id": new_message.id,
+                    "author": client.name,
+                    "message": new_message.message,
+                    "created_at": new_message.created_at.strftime("%d.%m.%Y %H:%M"),
+                    "is_from_client": True,
+                },
+                "messages": [
+                    {
+                        "id": item["id"],
+                        "author": item["author"],
+                        "message": item["message"],
+                        "created_at": item["created_at"].strftime("%d.%m.%Y %H:%M"),
+                        "is_from_client": item["is_from_client"],
+                    }
+                    for item in messages
+                ],
+            }
+        )
+    return RedirectResponse(f"/client/chat?case_id={legal_case_id}&sent=1", status_code=303)
+
+
+@app.get("/client/calendar", response_class=HTMLResponse)
+def client_calendar_page(request: Request, db: Session = Depends(get_db)):
+    user, client = require_client_account(request, db)
+    today = date.today()
+    my_cases = db.scalars(
+        select(LegalCase).where(LegalCase.client_id == client.id).order_by(LegalCase.opened_at.desc(), LegalCase.id.desc())
+    ).all()
+    case_ids = [item.id for item in my_cases]
+    tasks = []
+    events = []
+    case_map = {item.id: item for item in my_cases}
+    if case_ids:
+        tasks = db.scalars(
+            select(CaseTask).where(CaseTask.legal_case_id.in_(case_ids)).order_by(CaseTask.due_date.asc(), CaseTask.id.asc())
+        ).all()
+        events = db.scalars(
+            select(CalendarEvent)
+            .where(CalendarEvent.legal_case_id.in_(case_ids))
+            .order_by(CalendarEvent.starts_at.asc(), CalendarEvent.id.asc())
+        ).all()
+
+    timeline = []
+    for task in tasks:
+        timeline.append(
+            {
+                "date": task.due_date,
+                "title": task.title,
+                "kind": "Задача",
+                "status": STATUS_LABELS.get(task.status, task.status.value),
+                "case_number": task.legal_case.case_number if task.legal_case else "",
+                "urgency": (
+                    "overdue"
+                    if task.status != TaskStatus.DONE and task.due_date < today
+                    else "soon"
+                    if task.status != TaskStatus.DONE and (task.due_date - today).days <= 3
+                    else "normal"
+                ),
+            }
+        )
+    for event in events:
+        timeline.append(
+            {
+                "date": event.starts_at.date(),
+                "title": event.title,
+                "kind": "Событие",
+                "status": EVENT_TYPE_LABELS.get((event.event_type or "CUSTOM").upper(), "Событие"),
+                "case_number": case_map[event.legal_case_id].case_number if event.legal_case_id in case_map else "",
+                "urgency": "soon" if 0 <= (event.starts_at.date() - today).days <= 3 else "normal",
+            }
+        )
+    timeline.sort(key=lambda item: (item["date"], item["title"]))
+    return templates.TemplateResponse(
+        "client_calendar.html",
+        {
+            "request": request,
+            "user": user,
+            "client": client,
+            "timeline": timeline,
+            "today": today,
+        },
+    )
 
 
 @app.get("/clients", response_class=HTMLResponse)
@@ -680,8 +2221,6 @@ def add_client_chat_message(
             is_from_client=from_client,
         )
     )
-    if from_client:
-        db.add(Notification(recipient_id=user.id, title="Новое сообщение от клиента", message=client.name))
     log_action(db, user, "Сообщение в чате клиента", f"{client.name}: {text[:80]}")
     db.commit()
 
@@ -693,7 +2232,10 @@ def add_client_chat_message(
 @app.get("/cases", response_class=HTMLResponse)
 def cases_page(request: Request, db: Session = Depends(get_db)):
     user = require_auth(request, db)
-    cases = db.scalars(select(LegalCase).order_by(LegalCase.id.desc())).all()
+    stmt = select(LegalCase).where(LegalCase.intake_approved.is_(True)).order_by(LegalCase.id.desc())
+    if user.role == Role.LAWYER:
+        stmt = stmt.where(LegalCase.responsible_lawyer_id == user.id)
+    cases = db.scalars(stmt).all()
     clients = db.scalars(select(Client).order_by(Client.name)).all()
     lawyers = db.scalars(select(User).where(User.role == Role.LAWYER).order_by(User.full_name)).all()
     return templates.TemplateResponse(
@@ -1149,7 +2691,11 @@ def add_case_comment(
 @app.get("/kanban", response_class=HTMLResponse)
 def kanban_page(request: Request, db: Session = Depends(get_db)):
     user = require_auth(request, db)
-    cases = db.scalars(select(LegalCase).order_by(LegalCase.opened_at.desc(), LegalCase.id.desc())).all()
+    today = datetime.now().date()
+    stmt = select(LegalCase).where(LegalCase.intake_approved.is_(True)).order_by(LegalCase.opened_at.desc(), LegalCase.id.desc())
+    if user.role == Role.LAWYER:
+        stmt = stmt.where(LegalCase.responsible_lawyer_id == user.id)
+    cases = db.scalars(stmt).all()
     lawyers = db.scalars(select(User).where(User.role == Role.LAWYER).order_by(User.full_name, User.username)).all()
     grouped = defaultdict(list)
     for legal_case in cases:
@@ -1162,6 +2708,7 @@ def kanban_page(request: Request, db: Session = Depends(get_db)):
             "stages": list(CaseStage),
             "stage_labels": STAGE_LABELS,
             "lawyers": lawyers,
+            "today": today,
             "user": user,
         },
     )
@@ -1172,26 +2719,36 @@ def notifications_page(request: Request, db: Session = Depends(get_db)):
     user = require_auth(request, db)
     notifications = db.scalars(
         select(Notification)
+        .where(Notification.recipient_id == user.id)
         .order_by(Notification.is_read.asc(), Notification.created_at.desc(), Notification.id.desc())
         .limit(100)
     ).all()
     unread = len([item for item in notifications if not item.is_read])
     return templates.TemplateResponse(
         "notifications.html",
-        {"request": request, "notifications": notifications, "unread": unread, "user": user},
+        {"request": request, "notifications": notifications, "unread": unread, "user": user, "today": date.today()},
     )
 
 
 @app.post("/notifications/{notification_id}/read")
 def mark_notification_read(notification_id: int, request: Request, db: Session = Depends(get_db)):
-    _ = require_auth(request, db)
+    user = require_auth(request, db)
     notification = db.get(Notification, notification_id)
     if not notification:
         raise HTTPException(status_code=404, detail="Уведомление не найдено")
+    if notification.recipient_id != user.id:
+        raise HTTPException(status_code=403, detail="Нет доступа к уведомлению")
     notification.is_read = True
     db.commit()
     if request.headers.get("x-requested-with") == "XMLHttpRequest":
-        unread = db.scalar(select(func.count(Notification.id)).where(Notification.is_read.is_(False))) or 0
+        unread = (
+            db.scalar(
+                select(func.count(Notification.id))
+                .where(Notification.recipient_id == user.id)
+                .where(Notification.is_read.is_(False))
+            )
+            or 0
+        )
         return JSONResponse({"ok": True, "unread": unread})
     return RedirectResponse("/notifications", status_code=303)
 
@@ -1303,7 +2860,7 @@ def intake_submit(
         stage=CaseStage.NEW_REQUEST,
         priority="MEDIUM",
         opened_at=date.today(),
-        deadline=date.today() + timedelta(days=7),
+        deadline=None,
         client_id=client.id,
         responsible_lawyer_id=None,
     )

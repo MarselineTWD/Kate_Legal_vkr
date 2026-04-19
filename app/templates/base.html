@@ -3,12 +3,213 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  {% set is_client_portal = user and user.role.value == "CLIENT" %}
   <title>{% block title %}ЮрНавигатор{% endblock %}</title>
   <link rel="stylesheet" href="/site2static/strict.css" />
+  {% if is_client_portal %}
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/client-portal.css" />
+  {% endif %}
   {% block head %}{% endblock %}
 </head>
-<body class="{% if user %}cabinet-page{% endif %} {% block body_class %}{% endblock %}">
+<body class="{% if user %}cabinet-page{% endif %}{% if is_client_portal %} client-portal{% endif %} {% block body_class %}{% endblock %}">
   {% set current_path = request.url.path %}
+  {% if is_client_portal %}
+    {% if current_path == '/app' %}
+      {% set current_section_title = 'Главная' %}
+    {% elif current_path.startswith('/client/intake') %}
+      {% set current_section_title = 'Новое обращение' %}
+    {% elif current_path.startswith('/client/cases') %}
+      {% set current_section_title = 'Мои обращения и дела' %}
+    {% elif current_path.startswith('/client/documents') %}
+      {% set current_section_title = 'Документы' %}
+    {% elif current_path.startswith('/client/chat') %}
+      {% set current_section_title = 'Сообщения' %}
+    {% elif current_path.startswith('/client/calendar') %}
+      {% set current_section_title = 'События и сроки' %}
+    {% elif current_path.startswith('/notifications') %}
+      {% set current_section_title = 'Уведомления' %}
+    {% elif current_path.startswith('/client/profile') %}
+      {% set current_section_title = 'Профиль клиента' %}
+    {% else %}
+      {% set current_section_title = 'Клиентский кабинет' %}
+    {% endif %}
+
+  <svg aria-hidden="true" class="client-icon-sprite">
+    <symbol id="icon-grid" viewBox="0 0 24 24">
+      <path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z" fill="currentColor"></path>
+    </symbol>
+    <symbol id="icon-plus-square" viewBox="0 0 24 24">
+      <path d="M12 7v10M7 12h10M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+    </symbol>
+    <symbol id="icon-briefcase" viewBox="0 0 24 24">
+      <path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M4 9h16v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V9Zm0 0V8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v1" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+    </symbol>
+    <symbol id="icon-file" viewBox="0 0 24 24">
+      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+      <path d="M14 3v5h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+    </symbol>
+    <symbol id="icon-message" viewBox="0 0 24 24">
+      <path d="M6 17 3 20V6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+    </symbol>
+    <symbol id="icon-calendar" viewBox="0 0 24 24">
+      <path d="M8 2v4M16 2v4M3 10h18M5 5h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+    </symbol>
+    <symbol id="icon-bell" viewBox="0 0 24 24">
+      <path d="M6 9a6 6 0 1 1 12 0c0 7 3 7 3 9H3c0-2 3-2 3-9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+      <path d="M10 21a2 2 0 0 0 4 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+    </symbol>
+    <symbol id="icon-user" viewBox="0 0 24 24">
+      <path d="M20 21a8 8 0 0 0-16 0M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+    </symbol>
+    <symbol id="icon-log-out" viewBox="0 0 24 24">
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+    </symbol>
+    <symbol id="icon-home" viewBox="0 0 24 24">
+      <path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1V10Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+    </symbol>
+    <symbol id="icon-menu" viewBox="0 0 24 24">
+      <path d="M4 7h16M4 12h16M4 17h16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+    </symbol>
+    <symbol id="icon-close" viewBox="0 0 24 24">
+      <path d="M18 6 6 18M6 6l12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+    </symbol>
+    <symbol id="icon-arrow-right" viewBox="0 0 24 24">
+      <path d="M5 12h14M13 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+    </symbol>
+    <symbol id="icon-shield" viewBox="0 0 24 24">
+      <path d="M12 3 5 6v6c0 5 3.5 8.5 7 9 3.5-.5 7-4 7-9V6l-7-3Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+    </symbol>
+    <symbol id="icon-download" viewBox="0 0 24 24">
+      <path d="M12 3v12M7 10l5 5 5-5M5 21h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+    </symbol>
+    <symbol id="icon-paperclip" viewBox="0 0 24 24">
+      <path d="m21.4 11.1-8.6 8.6a6 6 0 1 1-8.5-8.5l9-9a4 4 0 1 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.6-8.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+    </symbol>
+    <symbol id="icon-eye" viewBox="0 0 24 24">
+      <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+      <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"></circle>
+    </symbol>
+    <symbol id="icon-trash" viewBox="0 0 24 24">
+      <path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M7 7l1 12a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2l1-12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+      <path d="M10 11v6M14 11v6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
+    </symbol>
+  </svg>
+
+  <div class="client-shell">
+    <div class="client-shell__backdrop" data-client-sidebar-close></div>
+    <aside class="client-sidebar" id="client-sidebar">
+      <div class="client-sidebar__brand">
+        <a href="/app" class="client-brand">
+          <span class="client-brand__mark">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-shield"></use></svg>
+          </span>
+          <span class="client-brand__copy">
+            <strong>ЮрНавигатор</strong>
+            <span>legal-tech client portal</span>
+          </span>
+        </a>
+        <button type="button" class="client-icon-button client-sidebar__close" data-client-sidebar-close aria-label="Закрыть меню">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-close"></use></svg>
+        </button>
+      </div>
+
+      <div class="client-sidebar__section">
+        <div class="client-sidebar__caption">Рабочее пространство</div>
+        <nav class="client-nav" aria-label="Навигация кабинета клиента">
+          <a href="/client/profile" class="client-nav__link{% if current_path.startswith('/client/profile') %} is-active{% endif %}">
+            <span class="client-nav__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-user"></use></svg></span>
+            <span class="client-nav__copy"><strong>Профиль</strong><small>Контакты и реквизиты клиента</small></span>
+          </a>
+          <a href="/app" class="client-nav__link{% if current_path == '/app' %} is-active{% endif %}">
+            <span class="client-nav__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-grid"></use></svg></span>
+            <span class="client-nav__copy"><strong>Главная</strong><small>Сводка по делам и событиям</small></span>
+          </a>
+          <a href="/client/intake" class="client-nav__link{% if current_path.startswith('/client/intake') %} is-active{% endif %}">
+            <span class="client-nav__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-plus-square"></use></svg></span>
+            <span class="client-nav__copy"><strong>Новое обращение</strong><small>Подать запрос и загрузить материалы</small></span>
+          </a>
+          <a href="/client/cases" class="client-nav__link{% if current_path.startswith('/client/cases') %} is-active{% endif %}">
+            <span class="client-nav__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-briefcase"></use></svg></span>
+            <span class="client-nav__copy"><strong>Мои дела</strong><small>Статусы, дедлайны и действия</small></span>
+          </a>
+          <a href="/client/documents" class="client-nav__link{% if current_path.startswith('/client/documents') %} is-active{% endif %}">
+            <span class="client-nav__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-file"></use></svg></span>
+            <span class="client-nav__copy"><strong>Документы</strong><small>Файлы, версии и загрузки</small></span>
+          </a>
+          <a href="/client/chat" class="client-nav__link{% if current_path.startswith('/client/chat') %} is-active{% endif %}">
+            <span class="client-nav__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-message"></use></svg></span>
+            <span class="client-nav__copy"><strong>Сообщения</strong><small>Чат с назначенным юристом</small></span>
+          </a>
+          <a href="/client/calendar" class="client-nav__link{% if current_path.startswith('/client/calendar') %} is-active{% endif %}">
+            <span class="client-nav__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-calendar"></use></svg></span>
+            <span class="client-nav__copy"><strong>События</strong><small>Календарь сроков и встреч</small></span>
+          </a>
+          <a href="/notifications" class="client-nav__link{% if current_path.startswith('/notifications') %} is-active{% endif %}">
+            <span class="client-nav__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-bell"></use></svg></span>
+            <span class="client-nav__copy"><strong>Уведомления</strong><small>Новые действия и изменения</small></span>
+          </a>
+        </nav>
+      </div>
+
+      <div class="client-sidebar__footer">
+        <div class="client-sidebar__support">
+          <div class="client-sidebar__support-icon">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-shield"></use></svg>
+          </div>
+          <div class="client-sidebar__support-copy">
+            <strong>{{ client.name if client is defined and client else user.full_name }}</strong>
+            <p>Защищённый кабинет для коммуникации с юридической командой</p>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <div class="client-shell__main">
+      <header class="client-topbar">
+        <div class="client-topbar__left">
+          <button type="button" class="client-icon-button client-topbar__menu" data-client-sidebar-toggle aria-label="Открыть меню">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-menu"></use></svg>
+          </button>
+          <div class="client-topbar__context">
+            <div class="client-topbar__eyebrow">Клиентский кабинет</div>
+            <div class="client-topbar__path">
+              <span>ЮрНавигатор</span>
+              <span class="client-topbar__divider">/</span>
+              <span>{{ current_section_title }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="client-topbar__right">
+          <a href="/" class="client-utility-link">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-home"></use></svg>
+            <span>Сайт</span>
+          </a>
+          <div class="client-user-chip">
+            <span class="client-user-chip__avatar">
+              {{ (user.full_name or 'Клиент')[:1] }}
+            </span>
+            <span class="client-user-chip__copy">
+              <strong>{{ user.full_name or user.username }}</strong>
+              <small>Клиент</small>
+            </span>
+          </div>
+          <a href="/logout" class="client-action-link">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-log-out"></use></svg>
+            <span>Выйти</span>
+          </a>
+        </div>
+      </header>
+
+      <main class="client-content">
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
+  {% else %}
   <header class="header site-header">
     <div class="container header-inner">
       <a href="{% if user %}/app{% else %}/{% endif %}" class="brand">
@@ -33,6 +234,7 @@
     <aside class="app-sidebar">
       <nav class="app-sidebar__nav" aria-label="Навигация кабинета">
         <a href="/app" class="{% if current_path == '/app' %}is-active{% endif %}">Кабинет</a>
+        {% if user.role.value != "CLIENT" %}
         <a href="/clients" class="{% if current_path.startswith('/clients') %}is-active{% endif %}">Клиенты</a>
         <a href="/cases" class="{% if current_path.startswith('/cases') %}is-active{% endif %}">Дела</a>
         <a href="/tasks" class="{% if current_path.startswith('/tasks') %}is-active{% endif %}">Задачи</a>
@@ -42,16 +244,26 @@
         <a href="/invoices" class="{% if current_path.startswith('/invoices') %}is-active{% endif %}">Счета</a>
         <a href="/audit" class="{% if current_path.startswith('/audit') %}is-active{% endif %}">Журнал</a>
         <a href="/portal/intake" class="{% if current_path.startswith('/portal/intake') %}is-active{% endif %}">Заявка</a>
+        {% else %}
+        <a href="/client/intake" class="{% if current_path.startswith('/client/intake') %}is-active{% endif %}">Новое обращение</a>
+        <a href="/client/cases" class="{% if current_path.startswith('/client/cases') %}is-active{% endif %}">Мои дела</a>
+        <a href="/client/documents" class="{% if current_path.startswith('/client/documents') %}is-active{% endif %}">Документы</a>
+        <a href="/client/chat" class="{% if current_path.startswith('/client/chat') %}is-active{% endif %}">Сообщения</a>
+        <a href="/client/calendar" class="{% if current_path.startswith('/client/calendar') %}is-active{% endif %}">События</a>
+        <a href="/notifications" class="{% if current_path.startswith('/notifications') %}is-active{% endif %}">Уведомления</a>
+        <a href="/client/profile" class="{% if current_path.startswith('/client/profile') %}is-active{% endif %}">Профиль</a>
+        {% endif %}
       </nav>
     </aside>
     <main class="app-main">
-      {% block content %}{% endblock %}
+      {{ self.content() }}
     </main>
   </div>
   {% else %}
     <main>
       {% block body_content %}{{ self.content() }}{% endblock %}
     </main>
+  {% endif %}
   {% endif %}
 
   {% if (show_footer is not defined or show_footer) and not user %}
@@ -76,7 +288,7 @@
   </footer>
   {% endif %}
 
-  {% if show_chat is not defined or show_chat %}
+  {% if (show_chat is not defined or show_chat) and not is_client_portal %}
   <div id="floating-chat" class="floating-chat" aria-live="polite">
     <div class="floating-chat__title">Помощь по системе</div>
     <p>Если возникли вопросы по делам, дедлайнам или документам, напишите администратору через внутренние комментарии.</p>
@@ -85,6 +297,9 @@
   {% endif %}
 
   <script src="/static/js/site.js"></script>
+  {% if is_client_portal %}
+  <script src="/static/js/client-portal.js"></script>
+  {% endif %}
   {% block scripts %}{% endblock %}
 </body>
 </html>

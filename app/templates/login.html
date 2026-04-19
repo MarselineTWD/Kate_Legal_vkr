@@ -10,7 +10,7 @@
 
     <div class="auth-tabs">
       <button type="button" class="auth-tab {% if active_tab == 'login' %}is-active{% endif %}" data-tab="login">Вход</button>
-      <button type="button" class="auth-tab {% if active_tab == 'register' %}is-active{% endif %}" data-tab="register">Регистрация</button>
+      <button type="button" class="auth-tab {% if active_tab == 'register' %}is-active{% endif %}" data-tab="register">Регистрация клиента</button>
     </div>
 
     <form method="post" action="/login" class="auth-form {% if active_tab == 'login' %}is-active{% endif %}" data-panel="login" novalidate>
@@ -24,6 +24,7 @@
 
     <form method="post" action="/register" class="auth-form {% if active_tab == 'register' %}is-active{% endif %}" data-panel="register" novalidate>
       {% if register_error %}<p class="error">{{ register_error }}</p>{% endif %}
+      <p class="subtitle">Только для клиентов. Учетные записи юристов создает администратор.</p>
 
       <label for="reg-last-name">Фамилия</label>
       <input id="reg-last-name" type="text" name="last_name" value="{{ register_last_name }}" minlength="2" maxlength="60" pattern="[A-Za-zА-Яа-яЁё\-\s]{2,60}" placeholder="Иванов" required />
@@ -56,13 +57,73 @@
   (function () {
     const tabs = document.querySelectorAll('.auth-tab');
     const panels = document.querySelectorAll('.auth-form');
+    const loginPanel = document.querySelector('[data-panel="login"]');
+    const registerPanel = document.querySelector('[data-panel="register"]');
+    const STORAGE_KEY = 'client_intake_draft';
+
+    const setActiveTab = (target) => {
+      tabs.forEach((t) => t.classList.toggle('is-active', t.dataset.tab === target));
+      panels.forEach((p) => p.classList.toggle('is-active', p.dataset.panel === target));
+    };
+
     tabs.forEach((tab) => {
       tab.addEventListener('click', () => {
-        const target = tab.dataset.tab;
-        tabs.forEach((t) => t.classList.toggle('is-active', t === tab));
-        panels.forEach((p) => p.classList.toggle('is-active', p.dataset.panel === target));
+        setActiveTab(tab.dataset.tab);
       });
     });
+
+    let draft = null;
+    try {
+      draft = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
+    } catch (error) {
+      draft = null;
+    }
+    const params = new URLSearchParams(window.location.search);
+    const fromRequest = params.get('from_request') === '1' || Boolean(draft && draft.source === 'landing-request');
+
+    if (fromRequest) {
+      setActiveTab('register');
+      if (registerPanel && !registerPanel.querySelector('input[name="intake_flow"]')) {
+        const hidden = document.createElement('input');
+        hidden.type = 'hidden';
+        hidden.name = 'intake_flow';
+        hidden.value = '1';
+        registerPanel.appendChild(hidden);
+      }
+    }
+
+    const contact = draft && typeof draft.contact === 'string' ? draft.contact.trim() : '';
+    const draftName = draft && typeof draft.name === 'string' ? draft.name.trim() : '';
+    if (contact) {
+      const looksLikeEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact);
+      const loginEmail = document.getElementById('login-email');
+      const regEmail = document.getElementById('reg-email');
+      const regPhone = document.getElementById('reg-phone');
+      if (looksLikeEmail) {
+        if (loginEmail && !loginEmail.value) loginEmail.value = contact;
+        if (regEmail && !regEmail.value) regEmail.value = contact;
+      } else if (regPhone && !regPhone.value) {
+        regPhone.value = contact;
+      }
+    }
+
+    if (draftName) {
+      const regLastName = document.getElementById('reg-last-name');
+      const regFirstName = document.getElementById('reg-first-name');
+      const regMiddleName = document.getElementById('reg-middle-name');
+      const parts = draftName.split(/\s+/).filter(Boolean);
+
+      if (parts.length >= 3) {
+        if (regLastName && !regLastName.value) regLastName.value = parts[0];
+        if (regFirstName && !regFirstName.value) regFirstName.value = parts[1];
+        if (regMiddleName && !regMiddleName.value) regMiddleName.value = parts.slice(2).join(' ');
+      } else if (parts.length === 2) {
+        if (regFirstName && !regFirstName.value) regFirstName.value = parts[0];
+        if (regLastName && !regLastName.value) regLastName.value = parts[1];
+      } else if (parts.length === 1) {
+        if (regFirstName && !regFirstName.value) regFirstName.value = parts[0];
+      }
+    }
   })();
 </script>
 {% endblock %}
