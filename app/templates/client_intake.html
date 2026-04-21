@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% block title %}Новое обращение{% endblock %}
 {% block content %}
 <section class="portal-page">
@@ -7,7 +7,7 @@
       <div class="portal-page__eyebrow">Новое обращение</div>
       <h1 class="portal-page__title">Подать запрос в юридическую команду</h1>
       <p class="portal-page__intro">
-        Опишите ситуацию, приложите документы и отправьте обращение. После проверки мы назначим ответственного юриста и уведомим вас в кабинете.
+        Опишите ситуацию, приложите документы и отправьте обращение. После проверки администратор назначит ответственного юриста и уведомит вас в кабинете.
       </p>
     </div>
     <div class="portal-actions">
@@ -18,7 +18,17 @@
   {% if created %}
   <div class="portal-alert portal-alert--success">
     <strong>Обращение отправлено.</strong>
-    <span>Мы уже зарегистрировали заявку и уведомим вас после принятия её в работу.</span>
+    <span>Заявка зарегистрирована и направлена администратору на проверку.</span>
+  </div>
+  {% elif request.query_params.get('error') == 'message' %}
+  <div class="portal-alert portal-alert--danger">
+    <strong>Нужно описать проблему.</strong>
+    <span>Заполните поле «Описание проблемы», чтобы отправить обращение.</span>
+  </div>
+  {% elif request.query_params.get('error') == 'phone_missing' %}
+  <div class="portal-alert portal-alert--warning">
+    <strong>Телефон не заполнен в профиле.</strong>
+    <span>Укажите телефон в профиле клиента, чтобы разрешить связь по телефону.</span>
   </div>
   {% endif %}
 
@@ -37,7 +47,7 @@
             <span class="portal-step">1</span>
             <div>
               <h3>Основная информация</h3>
-              <p>Кратко сформулируйте тему и выберите подходящую категорию, чтобы мы быстрее направили запрос в работу.</p>
+              <p>Кратко сформулируйте тему и выберите подходящую категорию.</p>
             </div>
           </div>
 
@@ -45,7 +55,6 @@
             <label class="portal-field">
               <span>Тема обращения</span>
               <input class="portal-control" type="text" id="client-intake-topic" name="case_title" placeholder="Например: оспаривание увольнения" required />
-              <small>Используйте короткий и понятный заголовок.</small>
             </label>
 
             <label class="portal-field">
@@ -73,7 +82,6 @@
                 <option value="Миграционное право">Миграционное право</option>
                 <option value="Другое">Другое</option>
               </select>
-              <small>Если сомневаетесь, выберите ближайшую категорию.</small>
             </label>
           </div>
         </div>
@@ -82,24 +90,55 @@
           <div class="portal-form__section-head">
             <span class="portal-step">2</span>
             <div>
-              <h3>Опишите ситуацию</h3>
-              <p>Укажите факты, ключевые даты, участников и ожидаемый результат. Чем понятнее описание, тем быстрее команда сформирует следующий шаг.</p>
+              <h3>Коммуникация</h3>
+              <p>Укажите предпочтительный способ связи и статус обращения.</p>
             </div>
           </div>
-
-          <label class="portal-field">
-            <span>Описание проблемы</span>
-            <textarea class="portal-control portal-control--textarea" id="client-intake-description" name="message" rows="8" placeholder="Опишите, что произошло, какие документы уже есть и какую помощь вы ожидаете."></textarea>
-            <small>Рекомендуем указать даты событий, контрагентов и текущий статус вопроса.</small>
-          </label>
+          <div class="portal-form-grid portal-form-grid--2">
+            <label class="portal-field">
+              <span>Предпочтительный способ связи</span>
+              <select class="portal-control" name="preferred_contact_method" id="preferred-contact-method">
+                <option value="CHAT" selected>Чат в кабинете</option>
+                <option value="EMAIL">Email</option>
+                <option value="PHONE">Телефон</option>
+              </select>
+            </label>
+            <label class="portal-field portal-field--span-2">
+              <span>Дополнительные параметры</span>
+              <label class="comment-form__toggle" style="margin-bottom:8px;">
+                <input type="checkbox" name="allow_phone_contact" value="true" id="allow-phone-contact" />
+                Можно ли связаться со мной по телефону
+              </label>
+              <label class="comment-form__toggle">
+                <input type="checkbox" name="is_consultation" value="true" id="is-consultation" />
+                Консультационное обращение (для юриста только чат, без задач по делу)
+              </label>
+              <small id="phone-contact-hint">Если включите звонок, в профиле должен быть заполнен номер телефона.</small>
+            </label>
+          </div>
         </div>
 
         <div class="portal-form__section">
           <div class="portal-form__section-head">
             <span class="portal-step">3</span>
             <div>
+              <h3>Опишите ситуацию</h3>
+              <p>Укажите факты, ключевые даты и ожидаемый результат.</p>
+            </div>
+          </div>
+
+          <label class="portal-field">
+            <span>Описание проблемы</span>
+            <textarea class="portal-control portal-control--textarea" id="client-intake-description" name="message" rows="8" placeholder="Опишите, что произошло, какие документы уже есть и какую помощь вы ожидаете." required></textarea>
+          </label>
+        </div>
+
+        <div class="portal-form__section">
+          <div class="portal-form__section-head">
+            <span class="portal-step">4</span>
+            <div>
               <h3>Приложите документы</h3>
-              <p>Загрузите договоры, переписку, претензии, решения суда или другие материалы, которые помогут быстрее оценить ситуацию.</p>
+              <p>Можно загружать документы и изображения (сканы, фото, скриншоты).</p>
             </div>
           </div>
 
@@ -109,12 +148,12 @@
             </div>
             <div class="upload-zone__copy">
               <strong>Перетащите файлы сюда или выберите вручную</strong>
-              <p>Поддерживаются несколько вложений. Документы автоматически прикрепятся к новому обращению.</p>
+              <p>Поддерживаются несколько вложений, включая изображения.</p>
             </div>
             <label class="portal-button portal-button--secondary upload-zone__button">
               <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-paperclip"></use></svg>
               <span>Выбрать файлы</span>
-              <input class="upload-zone__input" type="file" name="documents" multiple />
+              <input class="upload-zone__input" type="file" name="documents" multiple accept=".pdf,.doc,.docx,.txt,.rtf,.png,.jpg,.jpeg,.webp,.gif" />
             </label>
             <small class="upload-zone__meta" data-upload-label>Файлы не выбраны</small>
           </div>
@@ -122,7 +161,7 @@
 
         <div class="portal-form__footer">
           <div class="portal-form__note">
-            После отправки обращение появится в разделе «Мои дела», а статус автоматически обновится после проверки администратором.
+            После отправки обращение появится в разделе «Мои дела», а статус обновится после проверки администратором.
           </div>
           <button type="submit" class="portal-button portal-button--primary portal-button--large">
             <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-arrow-right"></use></svg>
@@ -131,8 +170,6 @@
         </div>
       </form>
     </article>
-
-
   </div>
 </section>
 {% endblock %}
@@ -144,6 +181,9 @@
     const topic = document.getElementById('client-intake-topic');
     const description = document.getElementById('client-intake-description');
     const category = document.getElementById('client-intake-category');
+    const preferredContactMethod = document.getElementById('preferred-contact-method');
+    const allowPhoneContact = document.getElementById('allow-phone-contact');
+    const isConsultation = document.getElementById('is-consultation');
     if (!topic || !description || !category) return;
 
     const params = new URLSearchParams(window.location.search);
@@ -165,6 +205,9 @@
             topic: topic.value,
             description: description.value,
             category: category.value,
+            preferred_contact_method: preferredContactMethod ? preferredContactMethod.value : 'CHAT',
+            allow_phone_contact: allowPhoneContact ? allowPhoneContact.checked : false,
+            is_consultation: isConsultation ? isConsultation.checked : false,
           }),
         );
       } catch (error) {
@@ -180,20 +223,24 @@
     }
 
     if (draft) {
-      if (!topic.value && typeof draft.topic === 'string') {
-        topic.value = draft.topic.trim();
+      if (!topic.value && typeof draft.topic === 'string') topic.value = draft.topic.trim();
+      if (!description.value && typeof draft.description === 'string') description.value = draft.description.trim();
+      if (!category.value && typeof draft.category === 'string') category.value = draft.category;
+      if (preferredContactMethod && !preferredContactMethod.value && typeof draft.preferred_contact_method === 'string') {
+        preferredContactMethod.value = draft.preferred_contact_method;
+      } else if (preferredContactMethod && typeof draft.preferred_contact_method === 'string') {
+        preferredContactMethod.value = draft.preferred_contact_method;
       }
-      if (!description.value && typeof draft.description === 'string') {
-        description.value = draft.description.trim();
-      }
-      if (!category.value && typeof draft.category === 'string') {
-        category.value = draft.category;
-      }
+      if (allowPhoneContact) allowPhoneContact.checked = Boolean(draft.allow_phone_contact);
+      if (isConsultation) isConsultation.checked = Boolean(draft.is_consultation);
     }
 
     topic.addEventListener('input', saveDraft);
     description.addEventListener('input', saveDraft);
     category.addEventListener('change', saveDraft);
+    preferredContactMethod?.addEventListener('change', saveDraft);
+    allowPhoneContact?.addEventListener('change', saveDraft);
+    isConsultation?.addEventListener('change', saveDraft);
   })();
 </script>
 {% endblock %}

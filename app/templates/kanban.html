@@ -1,194 +1,198 @@
 {% extends "base.html" %}
 {% block title %}Канбан{% endblock %}
 {% block content %}
-<section class="page">
-  <h1>Канбан доска</h1>
-  <p class="subtitle">Общая доска по всем делам. Перетаскивайте карточки между стадиями, чтобы сразу обновить статус дела, или откройте карточку для просмотра и редактирования.</p>
-  <div class="kanban" data-kanban-board>
-    {% for st in stages %}
-      <div class="column" data-stage-column data-stage-value="{{ st.value }}">
-        <div class="kanban-column__header">
-          <h3>{{ stage_labels[st] }}</h3>
-          <span class="kanban-column__count">{{ grouped[st] | length }}</span>
-        </div>
-        {% for c in grouped[st] %}
-        {% set priority_key = (c.priority or "MEDIUM") %}
-        {% set priority_label = {"LOW": "Низкий", "MEDIUM": "Средний", "HIGH": "Высокий"}.get(priority_key, priority_key) %}
-        {% set deadline_level = '' %}
-        {% if c.deadline and c.stage.value != "COMPLETED" %}
-          {% set days_left = (c.deadline - today).days %}
-          {% if days_left < 0 or (days_left >= 1 and days_left <= 3) %}
-            {% set deadline_level = 'urgent' %}
-          {% elif days_left >= 4 and days_left <= 7 %}
-            {% set deadline_level = 'warning' %}
+{% set metrics = namespace(high_risk=0, urgent=0, my_cases=0, unassigned=0) %}
+{% set total_cases = namespace(count=0) %}
+{% for stage in stages %}
+  {% for legal_case in grouped[stage] %}
+    {% set total_cases.count = total_cases.count + 1 %}
+  {% set insight = case_insights.get(legal_case.id, {}) %}
+  {% if insight.get('risk_level') == 'high' %}
+    {% set metrics.high_risk = metrics.high_risk + 1 %}
+  {% endif %}
+  {% if insight.get('deadline_days') is not none and insight.get('deadline_days') <= 7 and legal_case.stage.value != 'COMPLETED' %}
+    {% set metrics.urgent = metrics.urgent + 1 %}
+  {% endif %}
+  {% if user.role.value == 'LAWYER' or (legal_case.responsible_lawyer_id and legal_case.responsible_lawyer_id == user.id) %}
+    {% set metrics.my_cases = metrics.my_cases + 1 %}
+  {% endif %}
+  {% if not legal_case.responsible_lawyer_id %}
+    {% set metrics.unassigned = metrics.unassigned + 1 %}
+  {% endif %}
+  {% endfor %}
+{% endfor %}
+
+<section class="portal-page">
+  <div class="portal-page__header">
+    <div>
+      <div class="portal-page__eyebrow">Kanban workspace</div>
+      <h1 class="portal-page__title">Канбан юридических дел</h1>
+      <p class="portal-page__intro">
+        Легкая визуально, но плотная по данным канбан-доска для ежедневной операционной работы: приоритеты, сроки, клиент, ответственный юрист, умная подсказка и быстрый переход в карточку дела.
+      </p>
+    </div>
+    <div class="portal-actions">
+      <a href="/cases" class="portal-button portal-button--secondary">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-table"></use></svg>
+        <span>Портфель дел</span>
+      </a>
+    </div>
+  </div>
+
+  <div class="ops-kpi-grid ops-kpi-grid--4">
+    <article class="ops-kpi-card">
+      <div class="ops-kpi-card__icon ops-kpi-card__icon--navy"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-columns"></use></svg></div>
+      <div class="ops-kpi-card__content"><span>Всего на доске</span><strong>{{ total_cases.count }}</strong><small>Все дела в текущем канбане</small></div>
+    </article>
+    <article class="ops-kpi-card">
+      <div class="ops-kpi-card__icon ops-kpi-card__icon--brand"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-user"></use></svg></div>
+      <div class="ops-kpi-card__content"><span>Мой контур</span><strong>{{ metrics.my_cases }}</strong><small>{% if user.role.value == 'LAWYER' %}Ваш персональный канбан{% else %}Дела, закрепленные за вами{% endif %}</small></div>
+    </article>
+    <article class="ops-kpi-card">
+      <div class="ops-kpi-card__icon ops-kpi-card__icon--danger"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-alert-circle"></use></svg></div>
+      <div class="ops-kpi-card__content"><span>Высокий риск</span><strong>{{ metrics.high_risk }}</strong><small>Нужны быстрые решения по срокам или нагрузке</small></div>
+    </article>
+    <article class="ops-kpi-card">
+      <div class="ops-kpi-card__icon ops-kpi-card__icon--warning"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-clock-3"></use></svg></div>
+      <div class="ops-kpi-card__content"><span>Сроки до 7 дней</span><strong>{{ metrics.urgent }}</strong><small>Ближайшие дедлайны и точки перехода</small></div>
+    </article>
+  </div>
+
+  <div class="ops-toolbar" data-list-filter-root>
+    <div class="ops-toolbar__header">
+      <div>
+        <h2 class="ops-toolbar__title">Сценарии доски</h2>
+        <p class="ops-toolbar__subtitle">
+          {% if user.role.value == 'LAWYER' %}
+            Сейчас открыт мой канбан. Дополнительно можно отфильтровать карточки по приоритету и риску.
+          {% else %}
+            Используйте поиск, фильтр по юристам и фильтр по приоритету, чтобы быстро переключаться между общим канбаном, персональными контурами и приоритетными очередями.
           {% endif %}
-        {% endif %}
-        <article
-          class="card case-card {% if deadline_level %}case-card--deadline-{{ deadline_level }}{% endif %}"
-          draggable="true"
-          data-case-card
-          data-case-id="{{ c.id }}"
-          data-current-stage="{{ c.stage.value }}"
-          data-case-number="{{ c.case_number }}"
-          data-case-title="{{ c.title }}"
-          data-case-client="{{ c.client.name if c.client else 'Клиент не указан' }}"
-          data-case-opened-at="{{ c.opened_at.strftime('%d.%m.%Y') if c.opened_at else '-' }}"
-          data-case-deadline="{{ c.deadline.strftime('%d.%m.%Y') if c.deadline else 'Без дедлайна' }}"
-          data-case-deadline-input="{{ c.deadline.isoformat() if c.deadline else '' }}"
-          data-case-priority="{{ priority_key }}"
-          data-case-priority-label="{{ priority_label }}"
-          data-case-category="{{ c.category }}"
-          data-case-description="{{ c.description }}"
-          data-case-lawyer-id="{{ c.responsible_lawyer_id or '' }}"
-          data-case-lawyer-name="{{ c.responsible_lawyer.full_name or c.responsible_lawyer.username if c.responsible_lawyer else 'Не назначен' }}"
-        >
-          <div class="case-card__header">
-            <strong class="case-card__number">{{ c.case_number }}</strong>
-            <span class="case-chip case-chip--{{ priority_key|lower }}" data-case-priority-chip>{{ priority_label }}</span>
-          </div>
-          <p class="case-card__title" data-case-title-text>{{ c.title }}</p>
-          <div class="case-card__client" data-case-client-text>{{ c.client.name if c.client else "Клиент не указан" }}</div>
-          <p class="case-card__description" data-case-description-text>{{ c.description }}</p>
-          <dl class="case-card__meta">
-            <div class="case-card__meta-row">
-              <dt>Открыто</dt>
-              <dd data-case-opened-at-text>{{ c.opened_at.strftime('%d.%m.%Y') if c.opened_at else "-" }}</dd>
-            </div>
-            <div class="case-card__meta-row">
-              <dt>Назначен</dt>
-              <dd data-case-lawyer-text>{{ c.responsible_lawyer.full_name or c.responsible_lawyer.username if c.responsible_lawyer else "Не назначен" }}</dd>
-            </div>
-            <div class="case-card__meta-row">
-              <dt>Дедлайн</dt>
-              <dd class="{% if deadline_level %}case-card__deadline case-card__deadline--{{ deadline_level }}{% endif %}" data-case-deadline-text>{{ c.deadline.strftime('%d.%m.%Y') if c.deadline else "Без дедлайна" }}</dd>
-            </div>
-          </dl>
-          <button type="button" class="case-card__open" data-case-open>Открыть карточку</button>
-          <form method="post" action="/cases/{{ c.id }}/stage" class="visually-hidden js-kanban-stage-form" aria-hidden="true">
-            <input type="hidden" name="stage" value="{{ c.stage.value }}" />
-          </form>
-        </article>
-        {% else %}
-          <p class="muted">Нет дел на этой стадии</p>
-        {% endfor %}
+        </p>
       </div>
+      <div class="ops-tag-list">
+        <span class="workspace-signal">Общий канбан</span>
+        <span class="workspace-signal">Мой канбан</span>
+        <span class="workspace-signal">По юристам</span>
+        <span class="workspace-signal">По приоритету</span>
+      </div>
+    </div>
+    <div class="ops-toolbar__body">
+      <label class="ops-search">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-search"></use></svg>
+        <input class="portal-control" type="search" placeholder="Поиск по номеру, теме, клиенту, категории, юристу" data-filter-search />
+      </label>
+      {% if user.role.value != 'LAWYER' %}
+      <select class="portal-control ops-filter-select" data-filter-select="lawyer">
+        <option value="">Все юристы</option>
+        {% for lawyer in lawyers %}
+        <option value="{{ lawyer.id }}">{{ lawyer.full_name or lawyer.username }}</option>
+        {% endfor %}
+      </select>
+      {% endif %}
+      <select class="portal-control ops-filter-select" data-filter-select="priority">
+        <option value="">Любой приоритет</option>
+        <option value="LOW">Низкий</option>
+        <option value="MEDIUM">Средний</option>
+        <option value="HIGH">Высокий</option>
+      </select>
+      <select class="portal-control ops-filter-select" data-filter-select="risk">
+        <option value="">Любой риск</option>
+        <option value="low">Под контролем</option>
+        <option value="medium">Нужен контроль</option>
+        <option value="high">Высокий риск</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="kanban" data-kanban-board>
+    {% for stage in stages %}
+    <section class="column" data-stage-column data-stage-value="{{ stage.value }}">
+      <div class="kanban-column__header">
+        <h3>{{ stage_labels[stage] }}</h3>
+        <span class="kanban-column__count">{{ grouped[stage] | length }}</span>
+      </div>
+
+      {% for legal_case in grouped[stage] %}
+      {% set insight = case_insights.get(legal_case.id, {}) %}
+      {% set deadline_level = '' %}
+      {% if legal_case.deadline and legal_case.stage.value != 'COMPLETED' %}
+        {% set days_left = (legal_case.deadline - today).days %}
+        {% if days_left < 0 or days_left <= 3 %}
+          {% set deadline_level = 'urgent' %}
+        {% elif days_left <= 7 %}
+          {% set deadline_level = 'warning' %}
+        {% endif %}
+      {% endif %}
+      <article
+        class="case-card{% if deadline_level %} case-card--deadline-{{ deadline_level }}{% endif %}"
+        draggable="true"
+        data-case-card
+        data-filter-item
+        data-search="{{ legal_case.case_number }} {{ legal_case.title }} {{ legal_case.client.name if legal_case.client else '' }} {{ legal_case.category }} {{ insight.get('responsible_name', '') }}"
+        data-lawyer="{{ legal_case.responsible_lawyer_id or '' }}"
+        data-priority="{{ legal_case.priority or 'MEDIUM' }}"
+        data-risk="{{ insight.get('risk_level', 'low') }}"
+        data-current-stage="{{ legal_case.stage.value }}"
+      >
+        <div class="case-card__header">
+          <div>
+            <div class="case-card__number">{{ legal_case.case_number }}</div>
+            <h3 class="case-card__title">{{ legal_case.title }}</h3>
+          </div>
+          <span class="ops-chip ops-chip--{{ (legal_case.priority or 'MEDIUM')|lower }}">{{ {"LOW":"Низкий","MEDIUM":"Средний","HIGH":"Высокий"}.get(legal_case.priority or 'MEDIUM', legal_case.priority or 'MEDIUM') }}</span>
+        </div>
+
+        <div class="case-card__client">{{ legal_case.client.name if legal_case.client else 'Клиент не указан' }}</div>
+
+        <p class="case-card__description">
+          {% if insight.get('suggestion') %}
+            {{ insight.get('suggestion').lawyer_name }} • {{ insight.get('suggestion').summary }}
+          {% else %}
+            {{ legal_case.description[:150] }}{% if legal_case.description and legal_case.description|length > 150 %}...{% endif %}
+          {% endif %}
+        </p>
+
+        <dl class="case-card__meta">
+          <div class="case-card__meta-row">
+            <dt>Ответственный</dt>
+            <dd>
+              {{ insight.get('responsible_name', 'Не назначен') }}
+              {% if insight.get('responsible_specialization') %}
+              • {{ insight.get('responsible_specialization') }}
+              {% endif %}
+            </dd>
+          </div>
+          <div class="case-card__meta-row">
+            <dt>Дедлайн</dt>
+            <dd class="{% if deadline_level %}case-card__deadline case-card__deadline--{{ deadline_level }}{% endif %}">
+              {{ legal_case.deadline.strftime('%d.%m.%Y') if legal_case.deadline else 'Без дедлайна' }}
+            </dd>
+          </div>
+          <div class="case-card__meta-row">
+            <dt>Риск</dt>
+            <dd><span class="ops-risk ops-risk--{{ insight.get('risk_level', 'low') }}">{{ insight.get('risk_label', 'Под контролем') }}</span></dd>
+          </div>
+          <div class="case-card__meta-row">
+            <dt>Клиентских действий</dt>
+            <dd>{{ insight.get('last_client_action_text', 'Нет новых действий клиента') }}</dd>
+          </div>
+        </dl>
+
+        <div class="case-card__footer">
+          <a href="/cases/{{ legal_case.id }}" class="case-card__open">Открыть карточку</a>
+          <span class="status-badge status-badge--surface">{{ legal_case.category }}</span>
+        </div>
+
+        <form method="post" action="/cases/{{ legal_case.id }}/stage" class="visually-hidden js-kanban-stage-form" aria-hidden="true">
+          <input type="hidden" name="stage" value="{{ legal_case.stage.value }}" />
+        </form>
+      </article>
+      {% else %}
+      <p class="muted">На этой стадии пока нет дел.</p>
+      {% endfor %}
+    </section>
     {% endfor %}
   </div>
 </section>
-
-<div class="modal" id="case-modal" hidden>
-  <div class="modal__backdrop" data-case-modal-close></div>
-  <div class="modal__dialog modal__dialog--wide" role="dialog" aria-modal="true" aria-labelledby="case-modal-title">
-    <div class="modal__header">
-      <div>
-        <div class="modal__eyebrow" id="case-modal-number">Дело</div>
-        <h2 id="case-modal-title">Карточка дела</h2>
-      </div>
-      <button type="button" class="modal__close" data-case-modal-close aria-label="Закрыть">x</button>
-    </div>
-
-    <div class="modal__body">
-      <form class="modal__form" id="case-modal-form">
-        <div class="modal__summary">
-          <span class="case-chip case-chip--medium" id="case-modal-priority-chip">Средний</span>
-          <span class="modal__stage" id="case-modal-stage"></span>
-          <span class="modal__info" id="case-modal-client"></span>
-          <span class="modal__info">Открыто: <strong id="case-modal-opened-at"></strong></span>
-        </div>
-        <label>Название
-          <input type="text" name="title" required />
-        </label>
-        <label>Категория
-          <input type="text" name="category" required />
-        </label>
-        <div class="modal__grid">
-          <label>Ответственный юрист
-            <select name="responsible_lawyer_id">
-              <option value="">Не назначен</option>
-              {% for lawyer in lawyers %}
-              <option value="{{ lawyer.id }}">{{ lawyer.full_name or lawyer.username }}</option>
-              {% endfor %}
-            </select>
-          </label>
-          <label>Приоритет
-            <select name="priority">
-              <option value="LOW">Низкий</option>
-              <option value="MEDIUM">Средний</option>
-              <option value="HIGH">Высокий</option>
-            </select>
-          </label>
-          <label>Дедлайн
-            <input type="date" name="deadline" />
-          </label>
-        </div>
-        <label>Описание
-          <textarea name="description" rows="8"></textarea>
-        </label>
-        <div class="modal__actions">
-          <button type="button" class="btn btn-light" data-case-modal-close>Закрыть</button>
-          <button type="submit" class="auth-action">Сохранить изменения</button>
-        </div>
-      </form>
-
-      <aside class="modal__sidebar">
-        <section class="workspace-card">
-          <div class="workspace-card__header">
-            <h3>Анализ рисков</h3>
-            <span class="workspace-badge workspace-badge--medium" id="case-risk-badge">Загрузка...</span>
-          </div>
-          <ul class="workspace-list" id="case-risk-list">
-            <li class="workspace-list__empty">Собираем сигналы по делу...</li>
-          </ul>
-        </section>
-
-        <section class="workspace-card">
-          <div class="workspace-card__header">
-            <h3>ИИ-подсказки</h3>
-          </div>
-          <p class="workspace-summary" id="case-ai-summary">Готовим рекомендации...</p>
-          <div class="workspace-meta">
-            <span class="workspace-meta__label">Предполагаемая категория</span>
-            <strong id="case-ai-category">-</strong>
-          </div>
-          <div class="workspace-columns">
-            <div>
-              <h4>Следующие шаги</h4>
-              <ul class="workspace-list" id="case-ai-steps">
-                <li class="workspace-list__empty">Нет данных</li>
-              </ul>
-            </div>
-            <div>
-              <h4>Рекомендуемые документы</h4>
-              <ul class="workspace-list" id="case-ai-docs">
-                <li class="workspace-list__empty">Нет данных</li>
-              </ul>
-            </div>
-          </div>
-          <div class="workspace-signals" id="case-ai-signals"></div>
-        </section>
-
-        <section class="workspace-card">
-          <div class="workspace-card__header">
-            <h3>Комментарии по делу</h3>
-          </div>
-          <div class="comment-thread" id="case-comments-thread">
-            <p class="workspace-list__empty">Комментариев пока нет.</p>
-          </div>
-          <form id="case-comment-form" class="comment-form">
-            <label>Сообщение
-              <textarea name="message" rows="4" placeholder="Напишите комментарий по делу"></textarea>
-            </label>
-            <label class="comment-form__toggle">
-              <input type="checkbox" name="is_internal" value="true" checked />
-              Внутренний комментарий
-            </label>
-            <div class="modal__actions modal__actions--single">
-              <button type="submit" class="auth-action">Отправить комментарий</button>
-            </div>
-          </form>
-        </section>
-      </aside>
-    </div>
-  </div>
-</div>
 {% endblock %}

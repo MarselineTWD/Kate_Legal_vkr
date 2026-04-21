@@ -1,91 +1,344 @@
 {% extends "base.html" %}
-{% block title %}Дела{% endblock %}
+{% block title %}Юридические дела{% endblock %}
 {% block content %}
-<section class="page">
-  <h1>Юридические дела</h1>
+{% set metrics = namespace(high_risk=0, urgent_deadlines=0, unassigned=0) %}
+{% for item in cases %}
+  {% set insight = case_insights.get(item.id, {}) %}
+  {% if insight.get('risk_level') == 'high' %}
+    {% set metrics.high_risk = metrics.high_risk + 1 %}
+  {% endif %}
+  {% if insight.get('deadline_days') is not none and insight.get('deadline_days') <= 7 and item.stage.value != 'COMPLETED' %}
+    {% set metrics.urgent_deadlines = metrics.urgent_deadlines + 1 %}
+  {% endif %}
+  {% if not item.responsible_lawyer_id %}
+    {% set metrics.unassigned = metrics.unassigned + 1 %}
+  {% endif %}
+{% endfor %}
 
-  {% if created %}<p class="success">Дело успешно создано.</p>{% endif %}
+<section class="portal-page">
+  {% if created %}
+  <div class="portal-alert portal-alert--success">
+    <strong>Дело создано.</strong>
+    <span>Карточка добавлена в портфель и доступна в списке, канбане и календаре.</span>
+  </div>
+  {% elif request.query_params.get('error') == 'lawyer_specialization' %}
+  <div class="portal-alert portal-alert--warning">
+    <strong>Нельзя назначить выбранного юриста.</strong>
+    <span>Назначение допускается только юристу с подходящей специализацией по категории дела.</span>
+  </div>
+  {% endif %}
 
-  <div class="table-card form-card">
-    <h2>Создать дело</h2>
-    <form method="post" action="/cases/new" class="inline-form grid-3">
-      <label>Номер дела
-        <input type="text" name="case_number" value="{{ generated_case_number }}" />
-      </label>
-      <label>Название
-        <input type="text" name="title" required />
-      </label>
-      <label>Категория
-        <input type="text" name="category" placeholder="Например: договоры" required />
-      </label>
-      <label>Клиент
-        <select name="client_id" required>
-          {% for client in clients %}
-          <option value="{{ client.id }}">{{ client.name }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label>Ответственный юрист
-        <select name="responsible_lawyer_id">
-          <option value="">Не назначен</option>
-          {% for lawyer in lawyers %}
-          <option value="{{ lawyer.id }}">{{ lawyer.full_name or lawyer.username }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label>Дедлайн
-        <input type="date" name="deadline" />
-      </label>
-      <label>Стадия
-        <select name="stage">
-          {% for stage in stages %}
-          <option value="{{ stage.value }}">{{ stage_labels[stage] }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label>Приоритет
-        <select name="priority">
-          <option value="LOW">Низкий</option>
-          <option value="MEDIUM" selected>Средний</option>
-          <option value="HIGH">Высокий</option>
-        </select>
-      </label>
-      <label class="span-3">Описание
-        <textarea name="description" rows="3"></textarea>
-      </label>
-      <div class="form-actions form-actions-left span-3">
-        <button type="submit" class="auth-action">Сохранить дело</button>
-      </div>
-    </form>
+  <div class="portal-page__header">
+    <div>
+      <div class="portal-page__eyebrow">Юридические дела</div>
+      <h1 class="portal-page__title">Портфель дел и оперативный контроль</h1>
+      <p class="portal-page__intro">
+        Раздел собран как enterprise data view: быстрый поиск, фильтры, режим карточек и плотная табличная раскладка, современные статусы риска и умные TOPSIS-подсказки вместо сухих ссылок.
+      </p>
+    </div>
+    <div class="portal-actions">
+      <a href="#new-case" class="portal-button portal-button--primary">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-plus-square"></use></svg>
+        <span>Новое дело</span>
+      </a>
+    </div>
   </div>
 
-  <div class="table-card">
-    <table class="cases-table" data-resize-key="cases">
-      <thead><tr><th>Номер</th><th>Название</th><th>Клиент</th><th>Стадия</th><th>TOPSIS</th><th class="is-column-locked" data-col-min-width="320">Изменить стадию</th></tr></thead>
-      <tbody>
-      {% for item in cases %}
-      <tr data-status-row="case-{{ item.id }}">
-        <td>{{ item.case_number }}</td>
-        <td>{{ item.title }}</td>
-        <td>{{ item.client.name if item.client else '-' }}</td>
-        <td data-status-label>{{ stage_labels[item.stage] }}</td>
-        <td><a href="/cases/{{ item.id }}/topsis">Рекомендация</a></td>
-        <td class="action-cell">
-          <form method="post" action="/cases/{{ item.id }}/stage" class="compact-form compact-form--locked js-status-form" data-status-kind="case">
-            <select name="stage">
-              {% for stage in stages %}
-              <option value="{{ stage.value }}" {% if stage == item.stage %}selected{% endif %}>{{ stage_labels[stage] }}</option>
+  <div class="ops-kpi-grid ops-kpi-grid--5">
+    <article class="ops-kpi-card">
+      <div class="ops-kpi-card__icon ops-kpi-card__icon--navy"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-briefcase"></use></svg></div>
+      <div class="ops-kpi-card__content"><span>Всего дел</span><strong>{{ cases|length }}</strong><small>Портфель в текущем списке</small></div>
+    </article>
+    <article class="ops-kpi-card">
+      <div class="ops-kpi-card__icon ops-kpi-card__icon--brand"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-layout-grid"></use></svg></div>
+      <div class="ops-kpi-card__content"><span>Активные</span><strong>{{ cases|selectattr('stage.value', 'ne', 'COMPLETED')|list|length }}</strong><small>Не завершены и остаются в работе</small></div>
+    </article>
+    <article class="ops-kpi-card">
+      <div class="ops-kpi-card__icon ops-kpi-card__icon--danger"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-alert-circle"></use></svg></div>
+      <div class="ops-kpi-card__content"><span>Высокий риск</span><strong>{{ metrics.high_risk }}</strong><small>Есть риск по сроку, задачам или распределению</small></div>
+    </article>
+    <article class="ops-kpi-card">
+      <div class="ops-kpi-card__icon ops-kpi-card__icon--warning"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-calendar"></use></svg></div>
+      <div class="ops-kpi-card__content"><span>Дедлайны до 7 дней</span><strong>{{ metrics.urgent_deadlines }}</strong><small>Нужна плотная проверка сроков</small></div>
+    </article>
+    <article class="ops-kpi-card">
+      <div class="ops-kpi-card__icon ops-kpi-card__icon--info"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-user"></use></svg></div>
+      <div class="ops-kpi-card__content"><span>Без ответственного</span><strong>{{ metrics.unassigned }}</strong><small>Требуют назначения юриста</small></div>
+    </article>
+  </div>
+
+  <details class="ops-disclosure" id="new-case">
+    <summary>
+      <div class="ops-disclosure__summary-copy">
+        <strong>Создать новое дело</strong>
+        <span>Форма вынесена в progressive disclosure, чтобы раздел оставался легким для сканирования и управления существующим портфелем.</span>
+      </div>
+      <span class="ops-disclosure__summary-icon">
+        <span>Открыть форму</span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-chevron-down"></use></svg>
+      </span>
+    </summary>
+    <div class="ops-disclosure__body">
+      <form method="post" action="/cases/new" class="portal-form">
+        <div class="portal-form-grid portal-form-grid--2">
+          <label class="portal-field">
+            <span>Номер дела</span>
+            <input class="portal-control" type="text" name="case_number" value="{{ generated_case_number }}" />
+          </label>
+          <label class="portal-field">
+            <span>Название</span>
+            <input class="portal-control" type="text" name="title" required />
+          </label>
+          <label class="portal-field">
+            <span>Категория</span>
+            <input class="portal-control" type="text" name="category" placeholder="Например: договорная работа" required />
+          </label>
+          <label class="portal-field">
+            <span>Клиент</span>
+            <select class="portal-control" name="client_id" required>
+              {% for client in clients %}
+              <option value="{{ client.id }}" {% if prefill_client_id and prefill_client_id == client.id %}selected{% endif %}>{{ client.name }}</option>
               {% endfor %}
             </select>
-            <button type="submit">Обновить</button>
-          </form>
-        </td>
-      </tr>
+          </label>
+          <label class="portal-field">
+            <span>Ответственный юрист</span>
+            <select class="portal-control" name="responsible_lawyer_id">
+              <option value="">Не назначен</option>
+              {% for lawyer in lawyers %}
+              <option value="{{ lawyer.id }}">{{ lawyer.full_name or lawyer.username }}{% if lawyer.specialization %} — {{ lawyer.specialization }}{% endif %}</option>
+              {% endfor %}
+            </select>
+            <small>Выбирайте юриста по профильной специализации дела.</small>
+          </label>
+          <label class="portal-field">
+            <span>Дедлайн</span>
+            <input class="portal-control" type="date" name="deadline" />
+          </label>
+          <label class="portal-field">
+            <span>Стадия</span>
+            <select class="portal-control" name="stage">
+              {% for stage in stages %}
+              <option value="{{ stage.value }}">{{ stage_labels[stage] }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="portal-field">
+            <span>Приоритет</span>
+            <select class="portal-control" name="priority">
+              <option value="LOW">Низкий</option>
+              <option value="MEDIUM" selected>Средний</option>
+              <option value="HIGH">Высокий</option>
+            </select>
+          </label>
+          <label class="portal-field portal-field--span-2">
+            <span>Описание</span>
+            <textarea class="portal-control" name="description" rows="4"></textarea>
+          </label>
+        </div>
+        <div class="portal-form__footer portal-form__footer--split">
+          <div class="portal-form__note">После сохранения дело сразу попадет в общий портфель, карточку дела и канбан-доску.</div>
+          <button type="submit" class="portal-button portal-button--primary">Сохранить дело</button>
+        </div>
+      </form>
+    </div>
+  </details>
+
+  <div class="ops-toolbar" data-list-filter-root>
+    <div class="ops-toolbar__header">
+      <div>
+        <h2 class="ops-toolbar__title">Портфель дел</h2>
+        <p class="ops-toolbar__subtitle">Поиск и фильтрация работают сразу по карточкам и плотному табличному виду.</p>
+      </div>
+      <div class="ops-view-switch" data-view-root data-default-view="cards">
+        <button type="button" class="ops-view-button" data-view-button="cards">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-layout-grid"></use></svg>
+          <span>Карточки</span>
+        </button>
+        <button type="button" class="ops-view-button" data-view-button="table">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-table"></use></svg>
+          <span>Таблица</span>
+        </button>
+      </div>
+    </div>
+    <div class="ops-toolbar__body">
+      <label class="ops-search">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-search"></use></svg>
+        <input class="portal-control" type="search" placeholder="Поиск по номеру, теме, клиенту, категории или юристу" data-filter-search />
+      </label>
+      <select class="portal-control ops-filter-select" data-filter-select="stage">
+        <option value="">Все стадии</option>
+        {% for stage in stages %}
+        <option value="{{ stage.value }}">{{ stage_labels[stage] }}</option>
+        {% endfor %}
+      </select>
+      <select class="portal-control ops-filter-select" data-filter-select="priority">
+        <option value="">Все приоритеты</option>
+        <option value="LOW">Низкий</option>
+        <option value="MEDIUM">Средний</option>
+        <option value="HIGH">Высокий</option>
+      </select>
+      <select class="portal-control ops-filter-select" data-filter-select="risk">
+        <option value="">Любой риск</option>
+        <option value="low">Под контролем</option>
+        <option value="medium">Нужен контроль</option>
+        <option value="high">Высокий риск</option>
+      </select>
+      <select class="portal-control ops-filter-select" data-filter-select="lawyer">
+        <option value="">Все юристы</option>
+        {% for lawyer in lawyers %}
+        <option value="{{ lawyer.id }}">{{ lawyer.full_name or lawyer.username }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="ops-cards-grid" data-view-panel="cards">
+      {% for item in cases %}
+      {% set insight = case_insights.get(item.id, {}) %}
+      <article
+        class="ops-record-card"
+        data-filter-item
+        data-search="{{ item.case_number }} {{ item.title }} {{ item.category }} {{ item.client.name if item.client else '' }} {{ insight.get('responsible_name', '') }}"
+        data-stage="{{ item.stage.value }}"
+        data-priority="{{ item.priority }}"
+        data-risk="{{ insight.get('risk_level', 'low') }}"
+        data-lawyer="{{ item.responsible_lawyer_id or '' }}"
+      >
+        <div class="ops-record-card__header">
+          <div>
+            <div class="ops-record-card__number">{{ item.case_number }}</div>
+            <h3>{{ item.title }}</h3>
+            {% if item.is_consultation %}<small class="ops-secondary">Дело-консультация</small>{% endif %}
+          </div>
+          <span class="status-badge {% if item.stage.value == 'COMPLETED' %}status-badge--success{% elif insight.get('risk_level') == 'high' %}status-badge--danger{% elif item.stage.value == 'NEW_REQUEST' %}status-badge--info{% else %}status-badge--brand{% endif %}">
+            {{ stage_labels[item.stage] }}
+          </span>
+        </div>
+
+        <div class="ops-inline-meta">
+          <span>Клиент: {{ item.client.name if item.client else '—' }}</span>
+          <span>Категория: {{ item.category }}</span>
+        </div>
+
+        <div class="ops-meta-grid">
+          <div class="ops-meta-item">
+            <span>Ответственный</span>
+            <strong>{{ insight.get('responsible_name', 'Не назначен') }}</strong>
+            {% if insight.get('responsible_specialization') %}
+            <small>{{ insight.get('responsible_specialization') }}</small>
+            {% endif %}
+          </div>
+          <div class="ops-meta-item"><span>Приоритет</span><strong>{{ {"LOW":"Низкий","MEDIUM":"Средний","HIGH":"Высокий"}.get(item.priority or 'MEDIUM', item.priority or 'MEDIUM') }}</strong></div>
+          <div class="ops-meta-item"><span>Дедлайн</span><strong>{{ item.deadline.strftime('%d.%m.%Y') if item.deadline else 'Не назначен' }}</strong></div>
+          <div class="ops-meta-item"><span>Риск</span><strong>{{ insight.get('risk_label', 'Под контролем') }}</strong></div>
+        </div>
+
+        {% if item.description %}
+        <p class="ops-record-card__desc">{{ item.description[:220] }}{% if item.description|length > 220 %}...{% endif %}</p>
+        {% endif %}
+
+        <div class="ops-suggestion">
+          <strong>Assistant suggestion</strong>
+          {% if insight.get('suggestion') %}
+          <p>{{ insight.get('suggestion').lawyer_name }} • {{ insight.get('suggestion').summary }}</p>
+          {% else %}
+          <p>Рекомендация будет доступна после уточнения категории и состава юридической команды.</p>
+          {% endif %}
+        </div>
+
+        <div class="ops-inline-actions">
+          <a href="/cases/{{ item.id }}" class="portal-button portal-button--primary">Открыть карточку</a>
+          <a href="/kanban" class="portal-button portal-button--ghost">Открыть в канбане</a>
+        </div>
+      </article>
       {% else %}
-      <tr><td colspan="6">Дел пока нет.</td></tr>
+      <div class="portal-empty">
+        <div class="portal-empty__icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-briefcase"></use></svg>
+        </div>
+        <h3>Портфель пока пуст</h3>
+        <p>Создайте первое дело, чтобы увидеть карточки, статусы, риски и операционные рекомендации.</p>
+      </div>
       {% endfor %}
-      </tbody>
-    </table>
+    </div>
+
+    <div class="portal-card portal-card--panel" data-view-panel="table" hidden>
+      <div class="ops-table-shell">
+        <table class="ops-table cases-table" data-resize-key="cases">
+          <thead>
+            <tr>
+              <th>Дело</th>
+              <th>Клиент</th>
+              <th>Стадия</th>
+              <th>Юрист</th>
+              <th>Приоритет</th>
+              <th>Дедлайн</th>
+              <th>Риск</th>
+              <th>TOPSIS</th>
+              <th class="is-column-locked" data-col-min-width="320">Быстрое действие</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in cases %}
+            {% set insight = case_insights.get(item.id, {}) %}
+            <tr
+              data-filter-item
+              data-search="{{ item.case_number }} {{ item.title }} {{ item.category }} {{ item.client.name if item.client else '' }} {{ insight.get('responsible_name', '') }}"
+              data-stage="{{ item.stage.value }}"
+              data-priority="{{ item.priority }}"
+              data-risk="{{ insight.get('risk_level', 'low') }}"
+              data-lawyer="{{ item.responsible_lawyer_id or '' }}"
+              data-status-row="case-{{ item.id }}"
+            >
+              <td>
+                <div class="ops-table__primary">
+                  <strong>{{ item.case_number }}</strong>
+                  <span class="ops-table__secondary">{{ item.title }}</span>
+                  {% if item.is_consultation %}<span class="ops-table__secondary">Консультация</span>{% endif %}
+                </div>
+              </td>
+              <td>{{ item.client.name if item.client else '—' }}</td>
+              <td data-status-label>{{ stage_labels[item.stage] }}</td>
+              <td>
+                <div class="ops-table__primary">
+                  <strong>{{ insight.get('responsible_name', 'Не назначен') }}</strong>
+                  {% if insight.get('responsible_specialization') %}
+                  <span class="ops-table__secondary">{{ insight.get('responsible_specialization') }}</span>
+                  {% endif %}
+                </div>
+              </td>
+              <td><span class="ops-chip ops-chip--{{ (item.priority or 'MEDIUM')|lower }}">{{ {"LOW":"Низкий","MEDIUM":"Средний","HIGH":"Высокий"}.get(item.priority or 'MEDIUM', item.priority or 'MEDIUM') }}</span></td>
+              <td>{{ item.deadline.strftime('%d.%m.%Y') if item.deadline else '—' }}</td>
+              <td><span class="ops-risk ops-risk--{{ insight.get('risk_level', 'low') }}">{{ insight.get('risk_label', 'Под контролем') }}</span></td>
+              <td>
+                {% if insight.get('suggestion') %}
+                <div class="ops-table__primary">
+                  <strong>{{ insight.get('suggestion').lawyer_name }}</strong>
+                  <span class="ops-table__secondary">{{ '%.4f'|format(insight.get('suggestion').score) }}</span>
+                </div>
+                {% else %}
+                —
+                {% endif %}
+              </td>
+              <td>
+                <div class="ops-inline-actions">
+                  <a href="/cases/{{ item.id }}" class="portal-button portal-button--ghost">Карточка</a>
+                  <form method="post" action="/cases/{{ item.id }}/stage" class="ops-inline-form js-status-form" data-status-kind="case">
+                    <select name="stage">
+                      {% for stage in stages %}
+                      <option value="{{ stage.value }}" {% if stage == item.stage %}selected{% endif %}>{{ stage_labels[stage] }}</option>
+                      {% endfor %}
+                    </select>
+                    <button type="submit">Сменить</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
   </div>
 </section>
 {% endblock %}

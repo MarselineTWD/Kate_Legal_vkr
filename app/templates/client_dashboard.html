@@ -145,7 +145,7 @@
             <h3>{{ c.title }}</h3>
             <p>
               {% if c.responsible_lawyer %}
-                Ответственный юрист: {{ c.responsible_lawyer.full_name or c.responsible_lawyer.username }}
+                Ответственный юрист: {{ c.responsible_lawyer.full_name or c.responsible_lawyer.username }}{% if c.responsible_lawyer.specialization %} ({{ c.responsible_lawyer.specialization }}){% endif %}
               {% else %}
                 Юрист будет назначен после принятия обращения в работу.
               {% endif %}

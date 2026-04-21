@@ -1,60 +1,260 @@
 {% extends "base.html" %}
-{% block title %}Счета{% endblock %}
+{% block title %}Счета и платежи{% endblock %}
 {% block content %}
-<section class="page page--nav-offset">
-  <h1>Счета и платежи</h1>
+{% set totals = namespace(issued=0, paid=0, overdue=0, pending=0) %}
+{% for item in invoices %}
+  {% if item.status == 'PAID' %}
+    {% set totals.paid = totals.paid + (item.amount|float) %}
+  {% elif item.status == 'OVERDUE' %}
+    {% set totals.overdue = totals.overdue + (item.amount|float) %}
+    {% set totals.pending = totals.pending + (item.amount|float) %}
+  {% else %}
+    {% set totals.issued = totals.issued + (item.amount|float) %}
+    {% set totals.pending = totals.pending + (item.amount|float) %}
+  {% endif %}
+{% endfor %}
 
-  {% if created %}<p class="success">Счет успешно создан.</p>{% endif %}
+<section class="portal-page">
+  {% if created %}
+  <div class="portal-alert portal-alert--success">
+    <strong>Счет создан.</strong>
+    <span>Новый платежный документ добавлен в финансовый контур и доступен для контроля статуса.</span>
+  </div>
+  {% endif %}
 
-  <div class="table-card form-card">
-    <h2>Создать счет</h2>
-    <form method="post" action="/invoices/new" class="inline-form grid-3">
-      <label>Номер счета
-        <input type="text" name="number" required />
-      </label>
-      <label>Сумма
-        <input type="number" name="amount" step="0.01" min="0" required />
-      </label>
-      <label>Срок оплаты
-        <input type="date" name="due_date" required />
-      </label>
-      <label>Дело
-        <select name="legal_case_id" required>
-          {% for legal_case in cases %}
-          <option value="{{ legal_case.id }}">{{ legal_case.case_number }} — {{ legal_case.title }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label>Статус
-        <select name="status">
-          <option value="ISSUED">Выставлен</option>
-          <option value="PAID">Оплачен</option>
-          <option value="OVERDUE">Просрочен</option>
-        </select>
-      </label>
-      <div class="form-actions form-actions-left span-3">
-        <button type="submit" class="auth-action">Сохранить счет</button>
-      </div>
-    </form>
+  <div class="portal-page__header">
+    <div>
+      <div class="portal-page__eyebrow">Finance center</div>
+      <h1 class="portal-page__title">Счета и платежи</h1>
+      <p class="portal-page__intro">
+        Современный финансовый экран для контроля выставленных счетов, оплат, просрочек и связи с конкретными делами без ощущения тяжелой бухгалтерской таблицы.
+      </p>
+    </div>
+    <div class="portal-actions">
+      <a href="#invoice-create" class="portal-button portal-button--primary">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-plus-square"></use></svg>
+        <span>Новый счет</span>
+      </a>
+    </div>
   </div>
 
-  <div class="table-card">
-    <table data-resize-key="invoices">
-      <thead><tr><th>Номер</th><th>Сумма</th><th>Срок оплаты</th><th>Статус</th><th>ID дела</th></tr></thead>
-      <tbody>
+  <div class="ops-kpi-grid ops-kpi-grid--4">
+    <article class="ops-kpi-card">
+      <div class="ops-kpi-card__icon ops-kpi-card__icon--navy"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-receipt"></use></svg></div>
+      <div class="ops-kpi-card__content"><span>Выставлено</span><strong>{{ '%.0f'|format(totals.issued) }} ₽</strong><small>Сумма активных выставленных счетов</small></div>
+    </article>
+    <article class="ops-kpi-card">
+      <div class="ops-kpi-card__icon ops-kpi-card__icon--success"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-wallet"></use></svg></div>
+      <div class="ops-kpi-card__content"><span>Оплачено</span><strong>{{ '%.0f'|format(totals.paid) }} ₽</strong><small>Подтвержденные оплаты по делам</small></div>
+    </article>
+    <article class="ops-kpi-card">
+      <div class="ops-kpi-card__icon ops-kpi-card__icon--danger"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-alert-circle"></use></svg></div>
+      <div class="ops-kpi-card__content"><span>Просрочено</span><strong>{{ '%.0f'|format(totals.overdue) }} ₽</strong><small>Сумма просроченных обязательств</small></div>
+    </article>
+    <article class="ops-kpi-card">
+      <div class="ops-kpi-card__icon ops-kpi-card__icon--warning"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-clock-3"></use></svg></div>
+      <div class="ops-kpi-card__content"><span>Ожидает оплаты</span><strong>{{ '%.0f'|format(totals.pending) }} ₽</strong><small>Счета, которые еще не закрыты оплатой</small></div>
+    </article>
+  </div>
+
+  <details class="ops-disclosure" id="invoice-create">
+    <summary>
+      <div class="ops-disclosure__summary-copy">
+        <strong>Создать счет</strong>
+        <span>Форма вынесена из основного контента, чтобы financial center оставался обзорным и быстро сканировался.</span>
+      </div>
+      <span class="ops-disclosure__summary-icon">
+        <span>Открыть форму</span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-chevron-down"></use></svg>
+      </span>
+    </summary>
+    <div class="ops-disclosure__body">
+      <form method="post" action="/invoices/new" class="portal-form">
+        <div class="portal-form-grid portal-form-grid--2">
+          <label class="portal-field">
+            <span>Номер счета</span>
+            <input class="portal-control" type="text" name="number" required />
+          </label>
+          <label class="portal-field">
+            <span>Сумма</span>
+            <input class="portal-control" type="number" name="amount" step="0.01" min="0" required />
+          </label>
+          <label class="portal-field">
+            <span>Срок оплаты</span>
+            <input class="portal-control" type="date" name="due_date" required />
+          </label>
+          <label class="portal-field">
+            <span>Статус</span>
+            <select class="portal-control" name="status">
+              <option value="ISSUED">Выставлен</option>
+              <option value="PAID">Оплачен</option>
+              <option value="OVERDUE">Просрочен</option>
+            </select>
+          </label>
+          <label class="portal-field portal-field--span-2">
+            <span>Дело</span>
+            <select class="portal-control" name="legal_case_id" required>
+              {% for legal_case in cases %}
+              <option value="{{ legal_case.id }}" {% if request.query_params.get('case_id') and request.query_params.get('case_id')|int == legal_case.id %}selected{% endif %}>{{ legal_case.case_number }} — {{ legal_case.title }}</option>
+              {% endfor %}
+            </select>
+          </label>
+        </div>
+        <div class="portal-form__footer portal-form__footer--split">
+          <div class="portal-form__note">Новый счет сразу попадет в финансовую ленту и будет связан с конкретным делом.</div>
+          <button type="submit" class="portal-button portal-button--primary">Сохранить счет</button>
+        </div>
+      </form>
+    </div>
+  </details>
+
+  <div class="ops-toolbar" data-list-filter-root data-view-root data-default-view="cards">
+    <div class="ops-toolbar__header">
+      <div>
+        <h2 class="ops-toolbar__title">Платежный поток</h2>
+        <p class="ops-toolbar__subtitle">Используйте card view для быстрого обзора и table view для плотной работы со статусами.</p>
+      </div>
+      <div class="ops-view-switch">
+        <button type="button" class="ops-view-button" data-view-button="cards">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-layout-grid"></use></svg>
+          <span>Карточки</span>
+        </button>
+        <button type="button" class="ops-view-button" data-view-button="table">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-table"></use></svg>
+          <span>Таблица</span>
+        </button>
+      </div>
+    </div>
+    <div class="ops-toolbar__body">
+      <label class="ops-search">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-search"></use></svg>
+        <input class="portal-control" type="search" placeholder="Поиск по номеру счета, делу или клиенту" data-filter-search />
+      </label>
+      <select class="portal-control ops-filter-select" data-filter-select="status">
+        <option value="">Все статусы</option>
+        <option value="ISSUED">Выставлен</option>
+        <option value="PAID">Оплачен</option>
+        <option value="OVERDUE">Просрочен</option>
+      </select>
+      <select class="portal-control ops-filter-select" data-filter-select="case">
+        <option value="">Все дела</option>
+        {% for legal_case in cases %}
+        <option value="{{ legal_case.id }}">{{ legal_case.case_number }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="ops-cards-grid" data-view-panel="cards">
       {% for item in invoices %}
-        <tr>
-          <td>{{ item.number }}</td>
-          <td>{{ item.amount }}</td>
-          <td>{{ item.due_date.strftime('%d.%m.%Y') }}</td>
-          <td>{{ item.status }}</td>
-          <td>{{ item.legal_case_id }}</td>
-        </tr>
+      {% set legal_case = case_map.get(item.legal_case_id) %}
+      <article
+        class="ops-record-card"
+        data-filter-item
+        data-search="{{ item.number }} {{ legal_case.case_number if legal_case else '' }} {{ legal_case.title if legal_case else '' }} {{ legal_case.client.name if legal_case and legal_case.client else '' }}"
+        data-status="{{ item.status }}"
+        data-case="{{ item.legal_case_id }}"
+      >
+        <div class="ops-record-card__header">
+          <div>
+            <div class="ops-record-card__number">Invoice</div>
+            <h3>{{ item.number }}</h3>
+          </div>
+          <span class="status-badge {% if item.status == 'PAID' %}status-badge--success{% elif item.status == 'OVERDUE' or item.due_date < today and item.status != 'PAID' %}status-badge--danger{% else %}status-badge--warning{% endif %}">
+            {{ 'Оплачен' if item.status == 'PAID' else 'Просрочен' if item.status == 'OVERDUE' else 'Выставлен' }}
+          </span>
+        </div>
+
+        <div class="ops-meta-grid">
+          <div class="ops-meta-item"><span>Сумма</span><strong>{{ '%.2f'|format(item.amount|float) }} ₽</strong></div>
+          <div class="ops-meta-item"><span>Срок оплаты</span><strong>{{ item.due_date.strftime('%d.%m.%Y') }}</strong></div>
+          <div class="ops-meta-item"><span>Дело</span><strong>{{ legal_case.case_number if legal_case else '—' }}</strong></div>
+          <div class="ops-meta-item"><span>Клиент</span><strong>{{ legal_case.client.name if legal_case and legal_case.client else '—' }}</strong></div>
+        </div>
+
+        <div class="ops-inline-actions">
+          {% if legal_case %}
+          <a href="/cases/{{ legal_case.id }}" class="portal-button portal-button--ghost">Открыть дело</a>
+          {% endif %}
+          <a href="/invoices/{{ item.id }}/download" class="portal-button portal-button--ghost">Скачать</a>
+          <form method="post" action="/invoices/{{ item.id }}/status" class="ops-inline-form">
+            <select name="status">
+              <option value="ISSUED" {% if item.status == 'ISSUED' %}selected{% endif %}>Выставлен</option>
+              <option value="PAID" {% if item.status == 'PAID' %}selected{% endif %}>Оплачен</option>
+              <option value="OVERDUE" {% if item.status == 'OVERDUE' %}selected{% endif %}>Просрочен</option>
+            </select>
+            <button type="submit">Отметить</button>
+          </form>
+        </div>
+      </article>
       {% else %}
-        <tr><td colspan="5">Счета пока не созданы.</td></tr>
+      <div class="portal-empty">
+        <div class="portal-empty__icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-receipt"></use></svg>
+        </div>
+        <h3>Счета пока не созданы</h3>
+        <p>Создайте первый счет, чтобы увидеть финансовый контур дел и платежные статусы.</p>
+      </div>
       {% endfor %}
-      </tbody>
-    </table>
+    </div>
+
+    <div class="portal-card portal-card--panel" data-view-panel="table" hidden>
+      <div class="ops-table-shell">
+        <table class="ops-table" data-resize-key="invoices">
+          <thead>
+            <tr>
+              <th>Счет</th>
+              <th>Сумма</th>
+              <th>Срок оплаты</th>
+              <th>Статус</th>
+              <th>Дело</th>
+              <th class="is-column-locked" data-col-min-width="320">Действия</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in invoices %}
+            {% set legal_case = case_map.get(item.legal_case_id) %}
+            <tr
+              data-filter-item
+              data-search="{{ item.number }} {{ legal_case.case_number if legal_case else '' }} {{ legal_case.title if legal_case else '' }} {{ legal_case.client.name if legal_case and legal_case.client else '' }}"
+              data-status="{{ item.status }}"
+              data-case="{{ item.legal_case_id }}"
+            >
+              <td>
+                <div class="ops-table__primary">
+                  <strong>{{ item.number }}</strong>
+                  <span class="ops-table__secondary">{{ legal_case.client.name if legal_case and legal_case.client else '—' }}</span>
+                </div>
+              </td>
+              <td>{{ '%.2f'|format(item.amount|float) }} ₽</td>
+              <td>{{ item.due_date.strftime('%d.%m.%Y') }}</td>
+              <td>
+                <span class="status-badge {% if item.status == 'PAID' %}status-badge--success{% elif item.status == 'OVERDUE' or item.due_date < today and item.status != 'PAID' %}status-badge--danger{% else %}status-badge--warning{% endif %}">
+                  {{ 'Оплачен' if item.status == 'PAID' else 'Просрочен' if item.status == 'OVERDUE' else 'Выставлен' }}
+                </span>
+              </td>
+              <td>{{ legal_case.case_number if legal_case else '—' }}</td>
+              <td>
+                <div class="ops-inline-actions">
+                  {% if legal_case %}
+                  <a href="/cases/{{ legal_case.id }}" class="portal-button portal-button--ghost">Открыть</a>
+                  {% endif %}
+                  <a href="/invoices/{{ item.id }}/download" class="portal-button portal-button--ghost">Скачать</a>
+                  <form method="post" action="/invoices/{{ item.id }}/status" class="ops-inline-form">
+                    <select name="status">
+                      <option value="ISSUED" {% if item.status == 'ISSUED' %}selected{% endif %}>Выставлен</option>
+                      <option value="PAID" {% if item.status == 'PAID' %}selected{% endif %}>Оплачен</option>
+                      <option value="OVERDUE" {% if item.status == 'OVERDUE' %}selected{% endif %}>Просрочен</option>
+                    </select>
+                    <button type="submit">Отметить оплату</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
   </div>
 </section>
 {% endblock %}

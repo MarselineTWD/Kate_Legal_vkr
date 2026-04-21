@@ -1,36 +1,131 @@
 {% extends "base.html" %}
 {% block title %}Публичная заявка{% endblock %}
+{% block head %}
+  {% if not user %}
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/client-portal.css" />
+  <link rel="stylesheet" href="/static/css/staff-portal.css" />
+  {% endif %}
+{% endblock %}
+{% block body_class %}public-intake-page{% if not user %} client-portal staff-portal{% endif %}{% endblock %}
 {% block content %}
-<section class="page page--nav-offset">
-  <h1>Публичная форма заявки</h1>
-  <p class="subtitle">Оставьте обращение. Система создаст карточку клиента, дело и первичную задачу.</p>
+{% if not user %}
+<svg aria-hidden="true" class="client-icon-sprite">
+  <symbol id="icon-paperclip" viewBox="0 0 24 24">
+    <path d="m21.4 11.1-8.6 8.6a6 6 0 1 1-8.5-8.5l9-9a4 4 0 1 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.6-8.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
+  </symbol>
+</svg>
+{% endif %}
+<section class="portal-page ops-public-intake">
+  {% if success %}
+  <div class="portal-alert portal-alert--success">
+    <strong>Заявка отправлена.</strong>
+    <span>Мы создали обращение и свяжемся с вами после первичной проверки материалов.</span>
+  </div>
+  {% endif %}
 
-  {% if success %}<p class="success">Заявка отправлена. Мы свяжемся с вами в ближайшее время.</p>{% endif %}
+  <div class="ops-public-intake__hero">
+    <article class="portal-card portal-card--accent">
+      <div class="portal-card__eyebrow">Новая публичная заявка</div>
+      <h1 class="portal-page__title">Оставьте обращение в ЮрНавигатор</h1>
+      <p class="portal-page__intro">
+        Современная форма нового обращения в том же премиальном legal-tech стиле, что и клиентский кабинет: понятная структура, качественные поля, загрузка материалов и четкий следующий шаг.
+      </p>
+      <div class="portal-actions">
+        {% if not user %}
+        <a href="/login" class="portal-button portal-button--secondary">Войти в кабинет</a>
+        <a href="/" class="portal-button portal-button--ghost">На сайт</a>
+        {% else %}
+        <a href="/app" class="portal-button portal-button--ghost">К рабочему столу</a>
+        {% endif %}
+      </div>
+    </article>
 
-  <div class="table-card form-card">
-    <form method="post" action="/portal/intake" class="inline-form grid-2">
-      <label>ФИО / Название организации
-        <input type="text" name="full_name" required />
-      </label>
-      <label>Email
-        <input type="email" name="email" required />
-      </label>
-      <label>Телефон
-        <input type="text" name="phone" required />
-      </label>
-      <label>Категория обращения
-        <input type="text" name="category" placeholder="Например: договоры" required />
-      </label>
-      <label class="span-2">Тема обращения
-        <input type="text" name="case_title" required />
-      </label>
-      <label class="span-2">Описание проблемы
-        <textarea name="message" rows="5" placeholder="Опишите ситуацию и приложите ключевые детали"></textarea>
-      </label>
-      <div class="form-actions form-actions-left span-2">
-        <button type="submit" class="auth-action">Отправить заявку</button>
+    <aside class="ops-public-intake__stats">
+      <article class="ops-public-intake__stat">
+        <span>Что создаст система</span>
+        <strong>Клиент + дело + первичный маршрут</strong>
+      </article>
+      <article class="ops-public-intake__stat">
+        <span>Что можно приложить</span>
+        <strong>Документы, договоры, письма, материалы по спору</strong>
+      </article>
+      <article class="ops-public-intake__stat">
+        <span>Что дальше</span>
+        <strong>Проверка заявки и назначение ответственного юриста</strong>
+      </article>
+    </aside>
+  </div>
+
+  <article class="portal-card portal-card--panel">
+    <div class="portal-card__head">
+      <div>
+        <div class="portal-card__eyebrow">Public intake</div>
+        <h2 class="portal-card__title">Расскажите о ситуации и приложите материалы</h2>
+      </div>
+    </div>
+
+    <form method="post" action="/portal/intake" class="portal-form" enctype="multipart/form-data">
+      <div class="ops-form-grid">
+        <label class="portal-field">
+          <span>ФИО или название организации</span>
+          <input class="portal-control" type="text" name="full_name" required />
+        </label>
+        <label class="portal-field">
+          <span>Email</span>
+          <input class="portal-control" type="email" name="email" required />
+        </label>
+        <label class="portal-field">
+          <span>Телефон</span>
+          <input class="portal-control" type="text" name="phone" required />
+        </label>
+        <label class="portal-field">
+          <span>Категория обращения</span>
+          <input class="portal-control" type="text" name="category" placeholder="Например: договорная работа, взыскание, корпоративный спор" required />
+        </label>
+        <label class="portal-field portal-field--span-2">
+          <span>Тема обращения</span>
+          <input class="portal-control" type="text" name="case_title" placeholder="Коротко сформулируйте суть вопроса" required />
+        </label>
+        <label class="portal-field portal-field--span-2">
+          <span>Описание ситуации</span>
+          <textarea class="portal-control" name="message" rows="7" placeholder="Опишите контекст, сроки, участников, что уже сделано и какая помощь нужна"></textarea>
+        </label>
+        <div class="portal-field portal-field--span-2">
+          <span>Документы и материалы</span>
+          <div class="upload-zone" data-upload-zone>
+            <div class="upload-zone__icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-paperclip"></use></svg>
+            </div>
+            <div class="upload-zone__copy">
+              <strong>Перетащите файлы сюда или выберите вручную</strong>
+              <p>Можно приложить договоры, переписку, судебные документы, расчеты и другие материалы по обращению.</p>
+            </div>
+            <label class="portal-button portal-button--secondary upload-zone__button">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-paperclip"></use></svg>
+              <span>Выбрать файлы</span>
+              <input class="upload-zone__input" type="file" name="documents" multiple />
+            </label>
+            <small class="upload-zone__meta" data-upload-label>Файлы не выбраны</small>
+            <ul class="upload-zone__pending" data-upload-pending hidden></ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="portal-form__footer portal-form__footer--split">
+        <div class="portal-form__note">
+          После отправки система создаст карточку клиента, новое дело и первичный маршрут обработки заявки в кабинете юриста.
+        </div>
+        <button type="submit" class="portal-button portal-button--primary portal-button--large">Отправить заявку</button>
       </div>
     </form>
-  </div>
+  </article>
 </section>
+{% endblock %}
+{% block scripts %}
+  {% if not user %}
+  <script src="/static/js/client-portal.js"></script>
+  {% endif %}
 {% endblock %}

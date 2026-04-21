@@ -97,7 +97,7 @@
             </h2>
             <p class="chat-card__meta">
               {% if assigned_lawyer %}
-                Юрист: {{ assigned_lawyer.full_name or assigned_lawyer.username }}
+                Юрист: {{ assigned_lawyer.full_name or assigned_lawyer.username }}{% if assigned_lawyer.specialization %} ({{ assigned_lawyer.specialization }}){% endif %}
               {% else %}
                 Юрист будет назначен после принятия обращения.
               {% endif %}

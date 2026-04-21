@@ -1,88 +1,221 @@
 {% extends "base.html" %}
 {% block title %}Календарь дедлайнов{% endblock %}
 {% block content %}
-<section class="page">
-  <h1>Календарь дедлайнов</h1>
-  {% if created_event %}<p class="success">Событие добавлено в календарь.</p>{% endif %}
-  {% if selected_lawyer %}
-  <p class="subtitle">Показаны задачи юриста: {{ selected_lawyer.full_name or selected_lawyer.username }}</p>
-  {% else %}
-  <p class="subtitle">Показаны все задачи без привязки к конкретному юристу.</p>
+{% set metrics = namespace(upcoming=0, hearings=0, overdue=0, meetings=0) %}
+{% set today_iso = today.isoformat() %}
+{% for item in events %}
+  {% if item.date >= today_iso %}
+    {% set metrics.upcoming = metrics.upcoming + 1 %}
+  {% endif %}
+  {% if item.kind == 'TASK' and not item.is_done and item.date < today_iso %}
+    {% set metrics.overdue = metrics.overdue + 1 %}
+  {% endif %}
+  {% if item.event_type == 'COURT' %}
+    {% set metrics.hearings = metrics.hearings + 1 %}
+  {% endif %}
+  {% if item.event_type == 'MEETING' %}
+    {% set metrics.meetings = metrics.meetings + 1 %}
+  {% endif %}
+{% endfor %}
+
+<section class="portal-page">
+  {% if created_event %}
+  <div class="portal-alert portal-alert--success">
+    <strong>Событие добавлено.</strong>
+    <span>Новая точка контроля уже доступна в календаре и в операционных сводках.</span>
+  </div>
   {% endif %}
 
-  {% if user.role.value == "ADMIN" and lawyers %}
-  <form method="get" action="/calendar" class="table-card calendar-filter">
-    <label>Юрист
-      <select name="lawyer_id" onchange="this.form.submit()">
-        {% for lawyer in lawyers %}
-        <option value="{{ lawyer.id }}" {% if selected_lawyer and lawyer.id == selected_lawyer.id %}selected{% endif %}>
-          {{ lawyer.full_name or lawyer.username }}
-        </option>
-        {% endfor %}
-      </select>
-    </label>
-  </form>
-  {% endif %}
-
-  <div class="table-card form-card">
-    <h2>Добавить событие</h2>
-    <form method="post" action="/calendar/events/new" class="inline-form grid-3">
-      {% if selected_lawyer %}
-      <input type="hidden" name="lawyer_id" value="{{ selected_lawyer.id }}" />
-      {% endif %}
-      <label>Название события
-        <input type="text" name="title" placeholder="Например: заседание по делу" required />
-      </label>
-      <label>Дата
-        <input type="date" name="event_date" required />
-      </label>
-      <label>Тип события
-        <select name="event_type">
-          <option value="COURT">Судебное заседание</option>
-          <option value="MEETING">Встреча</option>
-          <option value="CLIENT">Коммуникация с клиентом</option>
-          <option value="DOCUMENT">Документы</option>
-          <option value="DEADLINE">Крайний срок</option>
-          <option value="CUSTOM">Другое</option>
-        </select>
-      </label>
-      <label class="span-3">Привязка к делу
-        <select name="legal_case_id">
-          <option value="">Без привязки к делу</option>
-          {% for legal_case in cases %}
-          <option value="{{ legal_case.id }}">{{ legal_case.case_number }} — {{ legal_case.title }}</option>
+  <div class="portal-page__header">
+    <div>
+      <div class="portal-page__eyebrow">Deadline calendar</div>
+      <h1 class="portal-page__title">Календарь дедлайнов и юридических событий</h1>
+      <p class="portal-page__intro">
+        Премиальный календарный контур для контроля сроков, заседаний, встреч, внутренних дедлайнов и коммуникаций с клиентами без ощущения старого административного календаря.
+      </p>
+    </div>
+    <div class="portal-actions">
+      {% if user.role.value == 'ADMIN' and lawyers %}
+      <form method="get" action="/calendar" class="ops-inline-form">
+        <select name="lawyer_id">
+          {% for lawyer in lawyers %}
+          <option value="{{ lawyer.id }}" {% if selected_lawyer and lawyer.id == selected_lawyer.id %}selected{% endif %}>{{ lawyer.full_name or lawyer.username }}</option>
           {% endfor %}
         </select>
-      </label>
-      <div class="form-actions form-actions-left span-3">
-        <button type="submit" class="auth-action">Сохранить событие</button>
-      </div>
-    </form>
-  </div>
-
-  <div class="calendar-toolbar">
-    <div class="calendar-nav" aria-label="Навигация по месяцам">
-      <button type="button" class="calendar-nav__button" id="calendar-prev-month">Назад</button>
-      <div class="calendar-nav__label" id="calendar-month-label" aria-live="polite"></div>
-      <button type="button" class="calendar-nav__button" id="calendar-next-month">Вперед</button>
+        <button type="submit">Показать юриста</button>
+      </form>
+      {% endif %}
+      <a href="#calendar-create" class="portal-button portal-button--primary">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-plus-square"></use></svg>
+        <span>Новое событие</span>
+      </a>
     </div>
   </div>
 
-  <div class="calendar-weekdays" aria-hidden="true">
-    <span>Пн</span>
-    <span>Вт</span>
-    <span>Ср</span>
-    <span>Чт</span>
-    <span>Пт</span>
-    <span>Сб</span>
-    <span>Вс</span>
+  <div class="ops-kpi-grid ops-kpi-grid--4">
+    <article class="ops-kpi-card">
+      <div class="ops-kpi-card__icon ops-kpi-card__icon--navy"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-calendar"></use></svg></div>
+      <div class="ops-kpi-card__content"><span>Всего событий</span><strong>{{ events|length }}</strong><small>Все сроки и точки контроля в текущей выборке</small></div>
+    </article>
+    <article class="ops-kpi-card">
+      <div class="ops-kpi-card__icon ops-kpi-card__icon--warning"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-clock-3"></use></svg></div>
+      <div class="ops-kpi-card__content"><span>Ближайшие сроки</span><strong>{{ metrics.upcoming }}</strong><small>Предстоящие задачи и события</small></div>
+    </article>
+    <article class="ops-kpi-card">
+      <div class="ops-kpi-card__icon ops-kpi-card__icon--danger"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-alert-circle"></use></svg></div>
+      <div class="ops-kpi-card__content"><span>Судебные заседания</span><strong>{{ metrics.hearings }}</strong><small>Процессуальные активности на горизонте</small></div>
+    </article>
+    <article class="ops-kpi-card">
+      <div class="ops-kpi-card__icon ops-kpi-card__icon--info"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-message"></use></svg></div>
+      <div class="ops-kpi-card__content"><span>Просрочено</span><strong>{{ metrics.overdue }}</strong><small>Незакрытые дедлайны задач в прошлом</small></div>
+    </article>
   </div>
-  <div id="calendar-grid" class="calendar-grid"></div>
+
+  <details class="ops-disclosure" id="calendar-create">
+    <summary>
+      <div class="ops-disclosure__summary-copy">
+        <strong>Добавить событие в календарь</strong>
+        <span>Новый блок вынесен в progressive disclosure, чтобы календарь оставался инструментом контроля, а не длинной формой.</span>
+      </div>
+      <span class="ops-disclosure__summary-icon">
+        <span>Открыть форму</span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-chevron-down"></use></svg>
+      </span>
+    </summary>
+    <div class="ops-disclosure__body">
+      <form method="post" action="/calendar/events/new" class="portal-form">
+        {% if selected_lawyer %}
+        <input type="hidden" name="lawyer_id" value="{{ selected_lawyer.id }}" />
+        {% endif %}
+        <div class="portal-form-grid portal-form-grid--2">
+          <label class="portal-field">
+            <span>Название события</span>
+            <input class="portal-control" type="text" name="title" placeholder="Например: заседание по делу, ответ клиенту, внутренняя встреча" required />
+          </label>
+          <label class="portal-field">
+            <span>Дата</span>
+            <input class="portal-control" type="date" name="event_date" required />
+          </label>
+          <label class="portal-field">
+            <span>Тип события</span>
+            <select class="portal-control" name="event_type">
+              <option value="COURT">Судебное заседание</option>
+              <option value="DEADLINE">Срок задачи</option>
+              <option value="MEETING">Встреча</option>
+              <option value="CLIENT">Ответ клиенту</option>
+              <option value="DOCUMENT">Документ / пакет</option>
+              <option value="CUSTOM">Другое событие</option>
+            </select>
+          </label>
+          <label class="portal-field">
+            <span>Привязка к делу</span>
+            <select class="portal-control" name="legal_case_id">
+              <option value="">Без привязки к делу</option>
+              {% for legal_case in cases %}
+              <option value="{{ legal_case.id }}">{{ legal_case.case_number }} — {{ legal_case.title }}</option>
+              {% endfor %}
+            </select>
+          </label>
+        </div>
+        <div class="portal-form__footer portal-form__footer--split">
+          <div class="portal-form__note">Типы события окрашиваются в календаре: заседание, срок, встреча, внутренняя точка контроля, ответ клиенту и документный этап.</div>
+          <button type="submit" class="portal-button portal-button--primary">Сохранить событие</button>
+        </div>
+      </form>
+    </div>
+  </details>
+
+  <div class="ops-calendar-layout">
+    <div class="portal-card portal-card--panel">
+      <div class="calendar-toolbar--portal">
+        <div>
+          <div class="portal-card__eyebrow">Calendar workspace</div>
+          <h2 class="portal-card__title">
+            {% if selected_lawyer %}
+              Календарь юриста: {{ selected_lawyer.full_name or selected_lawyer.username }}
+            {% else %}
+              Общий календарь контрольных дат
+            {% endif %}
+          </h2>
+        </div>
+        <div class="ops-toolbar__actions">
+          <div class="calendar-mode-switch" aria-label="Режим календаря">
+            <button type="button" data-calendar-mode-button="month">Месяц</button>
+            <button type="button" data-calendar-mode-button="week">Неделя</button>
+            <button type="button" data-calendar-mode-button="list">Список</button>
+          </div>
+          <div class="calendar-nav" aria-label="Навигация по календарю">
+            <button type="button" class="calendar-nav__button" id="calendar-prev-range">Назад</button>
+            <div class="calendar-nav__label" id="calendar-range-label" aria-live="polite"></div>
+            <button type="button" class="calendar-nav__button" id="calendar-next-range">Вперед</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="calendar-weekdays" id="calendar-weekdays" aria-hidden="true">
+        <span>Пн</span>
+        <span>Вт</span>
+        <span>Ср</span>
+        <span>Чт</span>
+        <span>Пт</span>
+        <span>Сб</span>
+        <span>Вс</span>
+      </div>
+
+      <div class="calendar-grid" id="calendar-grid"></div>
+      <div class="calendar-week-grid" id="calendar-week-grid" hidden></div>
+      <div class="calendar-list-view" id="calendar-list-view" hidden></div>
+    </div>
+
+    <div class="ops-card-stack">
+      <article class="portal-card portal-card--panel">
+        <div class="portal-card__head">
+          <div>
+            <div class="portal-card__eyebrow">Ближайшие события</div>
+            <h2 class="portal-card__title">Следующие точки контроля</h2>
+          </div>
+        </div>
+        <div class="calendar-side-list">
+          {% for item in events[:10] %}
+          <article class="calendar-side-list__item">
+            <strong>{{ item.title }}</strong>
+            <span>{{ item.status }}{% if item.case_number %} • {{ item.case_number }}{% endif %}</span>
+            <span>{{ item.date }}</span>
+          </article>
+          {% else %}
+          <div class="portal-empty portal-empty--compact">
+            <h3>Календарь пока пуст</h3>
+            <p>Добавьте событие или срок, чтобы увидеть рабочий ритм команды.</p>
+          </div>
+          {% endfor %}
+        </div>
+      </article>
+
+      <article class="portal-card portal-card--panel">
+        <div class="portal-card__head">
+          <div>
+            <div class="portal-card__eyebrow">Типы событий</div>
+            <h2 class="portal-card__title">Цветовая легенда</h2>
+          </div>
+        </div>
+        <div class="ops-tag-list">
+          <span class="ops-risk ops-risk--high">Судебное заседание</span>
+          <span class="ops-risk ops-risk--medium">Срок задачи</span>
+          <span class="workspace-signal">Встреча</span>
+          <span class="workspace-signal">Внутренний дедлайн</span>
+          <span class="workspace-signal">Ответ клиенту</span>
+          <span class="workspace-signal">Прочее событие</span>
+        </div>
+        <p class="ops-state-note">В month и week view одинаковая логика акцентов: красный для критичных заседаний и просрочек, янтарный для ближайших сроков, фиолетовый для клиентских и документных касаний.</p>
+      </article>
+    </div>
+  </div>
 </section>
 {% endblock %}
 {% block scripts %}
 <script>
   window.calendarEvents = {{ events | tojson }};
+  window.calendarToday = "{{ today.isoformat() }}";
 </script>
 <script src="/static/js/calendar.js"></script>
 {% endblock %}

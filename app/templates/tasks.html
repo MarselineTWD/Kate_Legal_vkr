@@ -1,84 +1,285 @@
 {% extends "base.html" %}
 {% block title %}Задачи{% endblock %}
 {% block content %}
-<section class="page">
-  <h1>Задачи</h1>
+{% set task_metrics = namespace(open=0, overdue=0, today=0, in_progress=0, done=0) %}
+{% for task in tasks %}
+  {% if task.status.value != 'DONE' %}
+    {% set task_metrics.open = task_metrics.open + 1 %}
+  {% else %}
+    {% set task_metrics.done = task_metrics.done + 1 %}
+  {% endif %}
+  {% if task.status.value == 'IN_PROGRESS' %}
+    {% set task_metrics.in_progress = task_metrics.in_progress + 1 %}
+  {% endif %}
+  {% if task.status.value != 'DONE' and task.due_date < today %}
+    {% set task_metrics.overdue = task_metrics.overdue + 1 %}
+  {% endif %}
+  {% if task.status.value != 'DONE' and task.due_date == today %}
+    {% set task_metrics.today = task_metrics.today + 1 %}
+  {% endif %}
+{% endfor %}
 
-  {% if created %}<p class="success">Задача успешно создана.</p>{% endif %}
+<section class="portal-page">
+  {% if created %}
+  <div class="portal-alert portal-alert--success">
+    <strong>Задача создана.</strong>
+    <span>Новый элемент появился в task center и доступен в списке и board-режиме.</span>
+  </div>
+  {% endif %}
 
-  <div class="table-card form-card">
-    <h2>Создать задачу</h2>
-    <form method="post" action="/tasks/new" class="inline-form grid-3">
-      <label>Дело
-        <select name="legal_case_id" required>
-          {% for legal_case in cases %}
-          <option value="{{ legal_case.id }}">{{ legal_case.case_number }} — {{ legal_case.title }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label>Название
-        <input type="text" name="title" required />
-      </label>
-      <label>Срок
-        <input type="date" name="due_date" required />
-      </label>
-      <label>Статус
-        <select name="status">
-          {% for status in statuses %}
-          <option value="{{ status.value }}">{{ status_labels[status] }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label>Приоритет
-        <select name="priority">
-          <option value="LOW">Низкий</option>
-          <option value="MEDIUM" selected>Средний</option>
-          <option value="HIGH">Высокий</option>
-        </select>
-      </label>
-      <label>Исполнитель
-        <select name="assignee_id">
-          <option value="">Не назначен</option>
-          {% for lawyer in lawyers %}
-          <option value="{{ lawyer.id }}">{{ lawyer.full_name or lawyer.username }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <label class="span-3">Описание
-        <textarea name="description" rows="3"></textarea>
-      </label>
-      <div class="form-actions form-actions-left span-3">
-        <button type="submit" class="auth-action">Сохранить задачу</button>
-      </div>
-    </form>
+  <div class="portal-page__header">
+    <div>
+      <div class="portal-page__eyebrow">Task center</div>
+      <h1 class="portal-page__title">Задачи и исполнительский контроль</h1>
+      <p class="portal-page__intro">
+        Единый центр управления задачами по делам: плотный список для быстрого сканирования, board view для контроля статусов и акцент на просрочку без визуального шума.
+      </p>
+    </div>
+    <div class="portal-actions">
+      <a href="#new-task" class="portal-button portal-button--primary">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-plus-square"></use></svg>
+        <span>Новая задача</span>
+      </a>
+    </div>
   </div>
 
-  <div class="table-card">
-    <table class="tasks-table" data-resize-key="tasks">
-      <thead><tr><th>Задача</th><th>Дело</th><th>Срок</th><th>Статус</th><th class="is-column-locked" data-col-min-width="320">Изменить</th></tr></thead>
-      <tbody>
-      {% for t in tasks %}
-      <tr data-status-row="task-{{ t.id }}">
-        <td>{{ t.title }}</td>
-        <td>{{ t.legal_case.case_number if t.legal_case else '-' }}</td>
-        <td>{{ t.due_date.strftime('%d.%m.%Y') }}</td>
-        <td data-status-label>{{ status_labels[t.status] }}</td>
-        <td class="action-cell">
-          <form method="post" action="/tasks/{{ t.id }}/status" class="compact-form compact-form--locked js-status-form" data-status-kind="task">
+  <div class="ops-kpi-grid ops-kpi-grid--5">
+    <article class="ops-kpi-card">
+      <div class="ops-kpi-card__icon ops-kpi-card__icon--navy"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-check-square"></use></svg></div>
+      <div class="ops-kpi-card__content"><span>Мои задачи</span><strong>{{ task_metrics.open }}</strong><small>Открытые задачи в работе</small></div>
+    </article>
+    <article class="ops-kpi-card">
+      <div class="ops-kpi-card__icon ops-kpi-card__icon--danger"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-alert-circle"></use></svg></div>
+      <div class="ops-kpi-card__content"><span>Просроченные</span><strong>{{ task_metrics.overdue }}</strong><small>Нужно вынести в верхний приоритет</small></div>
+    </article>
+    <article class="ops-kpi-card">
+      <div class="ops-kpi-card__icon ops-kpi-card__icon--warning"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-clock-3"></use></svg></div>
+      <div class="ops-kpi-card__content"><span>Сегодня</span><strong>{{ task_metrics.today }}</strong><small>Срок наступает сегодня</small></div>
+    </article>
+    <article class="ops-kpi-card">
+      <div class="ops-kpi-card__icon ops-kpi-card__icon--brand"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-layout-grid"></use></svg></div>
+      <div class="ops-kpi-card__content"><span>В работе</span><strong>{{ task_metrics.in_progress }}</strong><small>Уже запущены и требуют контроля</small></div>
+    </article>
+    <article class="ops-kpi-card">
+      <div class="ops-kpi-card__icon ops-kpi-card__icon--success"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-check-square"></use></svg></div>
+      <div class="ops-kpi-card__content"><span>Завершенные</span><strong>{{ task_metrics.done }}</strong><small>Закрытые элементы потока</small></div>
+    </article>
+  </div>
+
+  <details class="ops-disclosure" id="new-task">
+    <summary>
+      <div class="ops-disclosure__summary-copy">
+        <strong>Создать задачу</strong>
+        <span>Добавление новой задачи вынесено в раскрываемый блок, чтобы task center оставался сфокусированным на текущем исполнении.</span>
+      </div>
+      <span class="ops-disclosure__summary-icon">
+        <span>Открыть форму</span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-chevron-down"></use></svg>
+      </span>
+    </summary>
+    <div class="ops-disclosure__body">
+      <form method="post" action="/tasks/new" class="portal-form">
+        <div class="portal-form-grid portal-form-grid--2">
+          <label class="portal-field">
+            <span>Дело</span>
+            <select class="portal-control" name="legal_case_id" required>
+              {% for legal_case in cases %}
+              <option value="{{ legal_case.id }}">{{ legal_case.case_number }} — {{ legal_case.title }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="portal-field">
+            <span>Название</span>
+            <input class="portal-control" type="text" name="title" required />
+          </label>
+          <label class="portal-field">
+            <span>Срок</span>
+            <input class="portal-control" type="date" name="due_date" required />
+          </label>
+          <label class="portal-field">
+            <span>Статус</span>
+            <select class="portal-control" name="status">
+              {% for status in statuses %}
+              <option value="{{ status.value }}">{{ status_labels[status] }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="portal-field">
+            <span>Приоритет</span>
+            <select class="portal-control" name="priority">
+              <option value="LOW">Низкий</option>
+              <option value="MEDIUM" selected>Средний</option>
+              <option value="HIGH">Высокий</option>
+            </select>
+          </label>
+          <label class="portal-field">
+            <span>Исполнитель</span>
+            <select class="portal-control" name="assignee_id">
+              <option value="">Не назначен</option>
+              {% for lawyer in lawyers %}
+              <option value="{{ lawyer.id }}">{{ lawyer.full_name or lawyer.username }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="portal-field portal-field--span-2">
+            <span>Описание</span>
+            <textarea class="portal-control" name="description" rows="4"></textarea>
+          </label>
+        </div>
+        <div class="portal-form__footer portal-form__footer--split">
+          <div class="portal-form__note">После сохранения задача попадет в список, board view и календарный контур сроков.</div>
+          <button type="submit" class="portal-button portal-button--primary">Сохранить задачу</button>
+        </div>
+      </form>
+    </div>
+  </details>
+
+  <div class="ops-toolbar" data-list-filter-root data-view-root data-default-view="list">
+    <div class="ops-toolbar__header">
+      <div>
+        <h2 class="ops-toolbar__title">Task center</h2>
+        <p class="ops-toolbar__subtitle">Фильтры работают одновременно для list view и board view.</p>
+      </div>
+      <div class="ops-view-switch">
+        <button type="button" class="ops-view-button" data-view-button="list">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-list"></use></svg>
+          <span>List view</span>
+        </button>
+        <button type="button" class="ops-view-button" data-view-button="board">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-columns"></use></svg>
+          <span>Board view</span>
+        </button>
+      </div>
+    </div>
+    <div class="ops-toolbar__body">
+      <label class="ops-search">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-search"></use></svg>
+        <input class="portal-control" type="search" placeholder="Поиск по задаче, делу или исполнителю" data-filter-search />
+      </label>
+      <select class="portal-control ops-filter-select" data-filter-select="case">
+        <option value="">Все дела</option>
+        {% for legal_case in cases %}
+        <option value="{{ legal_case.id }}">{{ legal_case.case_number }}</option>
+        {% endfor %}
+      </select>
+      <select class="portal-control ops-filter-select" data-filter-select="status">
+        <option value="">Все статусы</option>
+        {% for status in statuses %}
+        <option value="{{ status.value }}">{{ status_labels[status] }}</option>
+        {% endfor %}
+      </select>
+      <select class="portal-control ops-filter-select" data-filter-select="priority">
+        <option value="">Любой приоритет</option>
+        <option value="LOW">Низкий</option>
+        <option value="MEDIUM">Средний</option>
+        <option value="HIGH">Высокий</option>
+      </select>
+      <select class="portal-control ops-filter-select" data-filter-select="assignee">
+        <option value="">Все исполнители</option>
+        {% for lawyer in lawyers %}
+        <option value="{{ lawyer.id }}">{{ lawyer.full_name or lawyer.username }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="ops-feed" data-view-panel="list">
+      {% for task in tasks %}
+      <article
+        class="ops-task-card"
+        data-filter-item
+        data-search="{{ task.title }} {{ task.description }} {{ task.legal_case.case_number if task.legal_case else '' }} {{ task.assignee.full_name if task.assignee else '' }} {{ task.assignee.username if task.assignee else '' }}"
+        data-case="{{ task.legal_case_id }}"
+        data-status="{{ task.status.value }}"
+        data-priority="{{ task.priority }}"
+        data-assignee="{{ task.assignee_id or '' }}"
+      >
+        <div class="ops-task-card__top">
+          <div>
+            <div class="ops-record-card__number">{{ task.legal_case.case_number if task.legal_case else 'Без дела' }}</div>
+            <h3 class="ops-task-card__title">{{ task.title }}</h3>
+          </div>
+          <span class="status-badge {% if task.status.value == 'DONE' %}status-badge--success{% elif task.due_date < today and task.status.value != 'DONE' %}status-badge--danger{% elif task.status.value == 'IN_PROGRESS' %}status-badge--brand{% else %}status-badge--surface{% endif %}" data-status-label>
+            {{ status_labels[task.status] }}
+          </span>
+        </div>
+
+        <div class="ops-inline-meta">
+          <span>Срок: {{ task.due_date.strftime('%d.%m.%Y') }}</span>
+          <span>Исполнитель: {{ task.assignee.full_name or task.assignee.username if task.assignee else 'Не назначен' }}</span>
+          <span class="ops-chip ops-chip--{{ (task.priority or 'MEDIUM')|lower }}">{{ {"LOW":"Низкий","MEDIUM":"Средний","HIGH":"Высокий"}.get(task.priority or 'MEDIUM', task.priority or 'MEDIUM') }}</span>
+        </div>
+
+        {% if task.description %}
+        <p class="ops-task-card__desc">{{ task.description }}</p>
+        {% endif %}
+
+        <div class="ops-inline-actions">
+          {% if task.legal_case %}
+          <a href="/cases/{{ task.legal_case.id }}" class="portal-button portal-button--ghost">Открыть дело</a>
+          {% endif %}
+          <form method="post" action="/tasks/{{ task.id }}/status" class="ops-inline-form js-status-form" data-status-kind="task">
             <select name="status">
               {% for status in statuses %}
-              <option value="{{ status.value }}" {% if status == t.status %}selected{% endif %}>{{ status_labels[status] }}</option>
+              <option value="{{ status.value }}" {% if status == task.status %}selected{% endif %}>{{ status_labels[status] }}</option>
               {% endfor %}
             </select>
             <button type="submit">Обновить</button>
           </form>
-        </td>
-      </tr>
+        </div>
+      </article>
       {% else %}
-      <tr><td colspan="5">Задач пока нет.</td></tr>
+      <div class="portal-empty">
+        <div class="portal-empty__icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-check-square"></use></svg>
+        </div>
+        <h3>Задач пока нет</h3>
+        <p>Добавьте первую задачу, чтобы сформировать оперативный поток исполнения.</p>
+      </div>
       {% endfor %}
-      </tbody>
-    </table>
+    </div>
+
+    <div class="ops-task-board" data-view-panel="board" hidden>
+      {% for status in statuses %}
+      <div class="ops-task-column">
+        <div class="ops-task-column__header">
+          <h3>{{ status_labels[status] }}</h3>
+          <span class="ops-count-badge">{{ tasks|selectattr('status', 'equalto', status)|list|length }}</span>
+        </div>
+
+        {% for task in tasks if task.status == status %}
+        <article
+          class="ops-task-card"
+          data-filter-item
+          data-search="{{ task.title }} {{ task.description }} {{ task.legal_case.case_number if task.legal_case else '' }} {{ task.assignee.full_name if task.assignee else '' }} {{ task.assignee.username if task.assignee else '' }}"
+          data-case="{{ task.legal_case_id }}"
+          data-status="{{ task.status.value }}"
+          data-priority="{{ task.priority }}"
+          data-assignee="{{ task.assignee_id or '' }}"
+        >
+          <div class="ops-task-card__top">
+            <div>
+              <div class="ops-record-card__number">{{ task.legal_case.case_number if task.legal_case else 'Без дела' }}</div>
+              <h3>{{ task.title }}</h3>
+            </div>
+            <span class="ops-chip ops-chip--{{ (task.priority or 'MEDIUM')|lower }}">{{ {"LOW":"Низкий","MEDIUM":"Средний","HIGH":"Высокий"}.get(task.priority or 'MEDIUM', task.priority or 'MEDIUM') }}</span>
+          </div>
+          <div class="ops-inline-meta">
+            <span>Срок: {{ task.due_date.strftime('%d.%m.%Y') }}</span>
+            <span>{% if task.assignee %}{{ task.assignee.full_name or task.assignee.username }}{% else %}Не назначен{% endif %}</span>
+          </div>
+          {% if task.description %}
+          <p class="ops-task-card__desc">{{ task.description }}</p>
+          {% endif %}
+          {% if task.legal_case %}
+          <a href="/cases/{{ task.legal_case.id }}" class="portal-button portal-button--ghost">Открыть дело</a>
+          {% endif %}
+        </article>
+        {% else %}
+        <div class="ops-state-note">В этом статусе пока нет задач.</div>
+        {% endfor %}
+      </div>
+      {% endfor %}
+    </div>
   </div>
 </section>
 {% endblock %}

@@ -204,12 +204,37 @@ def _ensure_legal_case_intake_column() -> None:
             }
             if "intake_approved" not in existing:
                 conn.execute(text("ALTER TABLE legal_cases ADD COLUMN intake_approved BOOLEAN DEFAULT 1"))
+            if "intake_status" not in existing:
+                conn.execute(text("ALTER TABLE legal_cases ADD COLUMN intake_status TEXT DEFAULT 'APPROVED'"))
+            if "intake_admin_comment" not in existing:
+                conn.execute(text("ALTER TABLE legal_cases ADD COLUMN intake_admin_comment TEXT DEFAULT ''"))
+            if "is_consultation" not in existing:
+                conn.execute(text("ALTER TABLE legal_cases ADD COLUMN is_consultation BOOLEAN DEFAULT 0"))
+            if "allow_phone_contact" not in existing:
+                conn.execute(text("ALTER TABLE legal_cases ADD COLUMN allow_phone_contact BOOLEAN DEFAULT 0"))
+            if "preferred_contact_method" not in existing:
+                conn.execute(text("ALTER TABLE legal_cases ADD COLUMN preferred_contact_method TEXT DEFAULT 'CHAT'"))
             conn.execute(text("UPDATE legal_cases SET intake_approved = 1 WHERE intake_approved IS NULL"))
+            conn.execute(text("UPDATE legal_cases SET intake_status = CASE WHEN intake_approved = 1 THEN 'APPROVED' ELSE 'PENDING_REVIEW' END WHERE intake_status IS NULL OR intake_status = ''"))
+            conn.execute(text("UPDATE legal_cases SET intake_admin_comment = '' WHERE intake_admin_comment IS NULL"))
+            conn.execute(text("UPDATE legal_cases SET is_consultation = 0 WHERE is_consultation IS NULL"))
+            conn.execute(text("UPDATE legal_cases SET allow_phone_contact = 0 WHERE allow_phone_contact IS NULL"))
+            conn.execute(text("UPDATE legal_cases SET preferred_contact_method = 'CHAT' WHERE preferred_contact_method IS NULL OR preferred_contact_method = ''"))
             return
 
         if dialect == "postgresql":
             conn.execute(text("ALTER TABLE legal_cases ADD COLUMN IF NOT EXISTS intake_approved BOOLEAN DEFAULT TRUE"))
+            conn.execute(text("ALTER TABLE legal_cases ADD COLUMN IF NOT EXISTS intake_status TEXT DEFAULT 'APPROVED'"))
+            conn.execute(text("ALTER TABLE legal_cases ADD COLUMN IF NOT EXISTS intake_admin_comment TEXT DEFAULT ''"))
+            conn.execute(text("ALTER TABLE legal_cases ADD COLUMN IF NOT EXISTS is_consultation BOOLEAN DEFAULT FALSE"))
+            conn.execute(text("ALTER TABLE legal_cases ADD COLUMN IF NOT EXISTS allow_phone_contact BOOLEAN DEFAULT FALSE"))
+            conn.execute(text("ALTER TABLE legal_cases ADD COLUMN IF NOT EXISTS preferred_contact_method TEXT DEFAULT 'CHAT'"))
             conn.execute(text("UPDATE legal_cases SET intake_approved = TRUE WHERE intake_approved IS NULL"))
+            conn.execute(text("UPDATE legal_cases SET intake_status = CASE WHEN intake_approved = TRUE THEN 'APPROVED' ELSE 'PENDING_REVIEW' END WHERE intake_status IS NULL OR intake_status = ''"))
+            conn.execute(text("UPDATE legal_cases SET intake_admin_comment = '' WHERE intake_admin_comment IS NULL"))
+            conn.execute(text("UPDATE legal_cases SET is_consultation = FALSE WHERE is_consultation IS NULL"))
+            conn.execute(text("UPDATE legal_cases SET allow_phone_contact = FALSE WHERE allow_phone_contact IS NULL"))
+            conn.execute(text("UPDATE legal_cases SET preferred_contact_method = 'CHAT' WHERE preferred_contact_method IS NULL OR preferred_contact_method = ''"))
             return
 
         existing = {
@@ -223,7 +248,22 @@ def _ensure_legal_case_intake_column() -> None:
         }
         if "intake_approved" not in existing:
             conn.execute(text("ALTER TABLE legal_cases ADD COLUMN intake_approved BOOLEAN DEFAULT TRUE"))
+        if "intake_status" not in existing:
+            conn.execute(text("ALTER TABLE legal_cases ADD COLUMN intake_status VARCHAR(32) DEFAULT 'APPROVED'"))
+        if "intake_admin_comment" not in existing:
+            conn.execute(text("ALTER TABLE legal_cases ADD COLUMN intake_admin_comment TEXT DEFAULT ''"))
+        if "is_consultation" not in existing:
+            conn.execute(text("ALTER TABLE legal_cases ADD COLUMN is_consultation BOOLEAN DEFAULT FALSE"))
+        if "allow_phone_contact" not in existing:
+            conn.execute(text("ALTER TABLE legal_cases ADD COLUMN allow_phone_contact BOOLEAN DEFAULT FALSE"))
+        if "preferred_contact_method" not in existing:
+            conn.execute(text("ALTER TABLE legal_cases ADD COLUMN preferred_contact_method VARCHAR(24) DEFAULT 'CHAT'"))
         conn.execute(text("UPDATE legal_cases SET intake_approved = TRUE WHERE intake_approved IS NULL"))
+        conn.execute(text("UPDATE legal_cases SET intake_status = CASE WHEN intake_approved = TRUE THEN 'APPROVED' ELSE 'PENDING_REVIEW' END WHERE intake_status IS NULL OR intake_status = ''"))
+        conn.execute(text("UPDATE legal_cases SET intake_admin_comment = '' WHERE intake_admin_comment IS NULL"))
+        conn.execute(text("UPDATE legal_cases SET is_consultation = FALSE WHERE is_consultation IS NULL"))
+        conn.execute(text("UPDATE legal_cases SET allow_phone_contact = FALSE WHERE allow_phone_contact IS NULL"))
+        conn.execute(text("UPDATE legal_cases SET preferred_contact_method = 'CHAT' WHERE preferred_contact_method IS NULL OR preferred_contact_method = ''"))
 
 
 def _ensure_legal_case_created_at_column() -> None:

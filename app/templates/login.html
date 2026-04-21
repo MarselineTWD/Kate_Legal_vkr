@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% block title %}Авторизация{% endblock %}
 {% block body_class %}auth-page{% endblock %}
 {% block content %}
@@ -20,7 +20,21 @@
       <label for="login-password">Пароль</label>
       <input id="login-password" type="password" name="password" minlength="8" required />
       <button type="submit" class="auth-action">Войти</button>
+      <button type="button" class="auth-recovery-link" data-recovery-toggle>Забыли пароль?</button>
     </form>
+    <div class="auth-recovery-wrap" data-recovery-wrap {% if not show_recovery %}hidden{% endif %}>
+      <form method="post" action="/password/recovery" class="auth-recovery-form" novalidate>
+        {% if recovery_error %}<p class="error">{{ recovery_error }}</p>{% endif %}
+        <p class="subtitle">Введите email и задайте новый пароль для входа в кабинет.</p>
+        <label for="recovery-email">Email</label>
+        <input id="recovery-email" type="email" name="email" value="{{ recovery_email }}" placeholder="name@example.com" required />
+        <label for="recovery-password">Новый пароль</label>
+        <input id="recovery-password" type="password" name="password" minlength="8" placeholder="Минимум 8 символов" required />
+        <label for="recovery-password-confirm">Повторите новый пароль</label>
+        <input id="recovery-password-confirm" type="password" name="password_confirm" minlength="8" placeholder="Повторите пароль" required />
+        <button type="submit" class="auth-action">Обновить пароль</button>
+      </form>
+    </div>
 
     <form method="post" action="/register" class="auth-form {% if active_tab == 'register' %}is-active{% endif %}" data-panel="register" novalidate>
       {% if register_error %}<p class="error">{{ register_error }}</p>{% endif %}
@@ -47,8 +61,18 @@
       <label for="reg-password-confirm">Повторите пароль</label>
       <input id="reg-password-confirm" type="password" name="password_confirm" minlength="8" placeholder="Повторите пароль" required />
 
+      <label class="auth-check">
+        <input type="checkbox" name="consent_personal_data" value="true" {% if register_consent_personal_data %}checked{% endif %} required />
+        <span>Согласен на обработку персональных данных</span>
+      </label>
+      <label class="auth-check">
+        <input type="checkbox" name="consent_privacy_policy" value="true" {% if register_consent_privacy_policy %}checked{% endif %} required />
+        <span>Согласие с политикой конфиденциальности</span>
+      </label>
+
       <button type="submit" class="auth-action">Зарегистрироваться</button>
     </form>
+
   </div>
 </section>
 {% endblock %}
@@ -57,13 +81,17 @@
   (function () {
     const tabs = document.querySelectorAll('.auth-tab');
     const panels = document.querySelectorAll('.auth-form');
-    const loginPanel = document.querySelector('[data-panel="login"]');
     const registerPanel = document.querySelector('[data-panel="register"]');
+    const recoveryWrap = document.querySelector('[data-recovery-wrap]');
+    const recoveryToggle = document.querySelector('[data-recovery-toggle]');
     const STORAGE_KEY = 'client_intake_draft';
 
     const setActiveTab = (target) => {
       tabs.forEach((t) => t.classList.toggle('is-active', t.dataset.tab === target));
       panels.forEach((p) => p.classList.toggle('is-active', p.dataset.panel === target));
+      if (target !== 'login' && recoveryWrap) {
+        recoveryWrap.hidden = true;
+      }
     };
 
     tabs.forEach((tab) => {
@@ -124,6 +152,11 @@
         if (regFirstName && !regFirstName.value) regFirstName.value = parts[0];
       }
     }
+
+    recoveryToggle?.addEventListener('click', () => {
+      if (!recoveryWrap) return;
+      recoveryWrap.hidden = !recoveryWrap.hidden;
+    });
   })();
 </script>
 {% endblock %}

@@ -1,25 +1,127 @@
 {% extends "base.html" %}
 {% block title %}Журнал действий{% endblock %}
 {% block content %}
-<section class="page">
-  <h1>Журнал действий пользователей</h1>
+{% set recent_today = namespace(count=0) %}
+{% for item in entries %}
+  {% if item.created_at.date() == today %}
+    {% set recent_today.count = recent_today.count + 1 %}
+  {% endif %}
+{% endfor %}
 
-  <div class="table-card">
-    <table class="readable-table audit-table">
-      <thead><tr><th>Дата</th><th>Пользователь</th><th>Действие</th><th>Детали</th></tr></thead>
-      <tbody>
+<section class="portal-page">
+  <div class="portal-page__header">
+    <div>
+      <div class="portal-page__eyebrow">Audit trail</div>
+      <h1 class="portal-page__title">Журнал действий пользователей</h1>
+      <p class="portal-page__intro">
+        Читаемый audit log с фильтрацией по пользователю, периоду и типу действия, чтобы за секунды понимать кто, что, когда и в каком контексте сделал.
+      </p>
+    </div>
+  </div>
+
+  <div class="ops-kpi-grid ops-kpi-grid--4">
+    <article class="ops-kpi-card">
+      <div class="ops-kpi-card__icon ops-kpi-card__icon--navy"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-activity"></use></svg></div>
+      <div class="ops-kpi-card__content"><span>Всего записей</span><strong>{{ entries|length }}</strong><small>Последние зафиксированные действия в системе</small></div>
+    </article>
+    <article class="ops-kpi-card">
+      <div class="ops-kpi-card__icon ops-kpi-card__icon--brand"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-user"></use></svg></div>
+      <div class="ops-kpi-card__content"><span>Пользователей</span><strong>{{ users_map|length }}</strong><small>Участники, фигурирующие в журнале</small></div>
+    </article>
+    <article class="ops-kpi-card">
+      <div class="ops-kpi-card__icon ops-kpi-card__icon--warning"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-clock-3"></use></svg></div>
+      <div class="ops-kpi-card__content"><span>Сегодня</span><strong>{{ recent_today.count }}</strong><small>Действия за текущий день</small></div>
+    </article>
+    <article class="ops-kpi-card">
+      <div class="ops-kpi-card__icon ops-kpi-card__icon--info"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-filter"></use></svg></div>
+      <div class="ops-kpi-card__content"><span>Типов действий</span><strong>{{ action_types|length }}</strong><small>Категории активности в журнале</small></div>
+    </article>
+  </div>
+
+  <div class="ops-toolbar" data-list-filter-root>
+    <div class="ops-toolbar__header">
+      <div>
+        <h2 class="ops-toolbar__title">Фильтры журнала</h2>
+        <p class="ops-toolbar__subtitle">Детали по делу и клиенту доступны через поиск, а по пользователю, периоду и типу действия — через отдельные фильтры.</p>
+      </div>
+    </div>
+    <div class="ops-toolbar__body">
+      <label class="ops-search">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-search"></use></svg>
+        <input class="portal-control" type="search" placeholder="Поиск по делу, клиенту, действию или деталям" data-filter-search />
+      </label>
+      <select class="portal-control ops-filter-select" data-filter-select="user">
+        <option value="">Все пользователи</option>
+        {% for user_id, actor in users_map.items() %}
+        <option value="{{ user_id }}">{{ actor.full_name or actor.username }}</option>
+        {% endfor %}
+      </select>
+      <select class="portal-control ops-filter-select" data-filter-select="action">
+        <option value="">Все действия</option>
+        {% for action in action_types %}
+        <option value="{{ action }}">{{ action }}</option>
+        {% endfor %}
+      </select>
+      <select class="portal-control ops-filter-select" data-filter-select="period">
+        <option value="">Любой период</option>
+        <option value="today">Сегодня</option>
+        <option value="week">7 дней</option>
+        <option value="month">30 дней</option>
+        <option value="older">Старше 30 дней</option>
+      </select>
+    </div>
+
+    <div class="ops-audit-list">
       {% for item in entries %}
-        <tr>
-          <td>{{ item.created_at.strftime('%d.%m.%Y %H:%M') }}</td>
-          <td>{{ users_map[item.user_id].full_name if item.user_id and item.user_id in users_map else 'Система' }}</td>
-          <td>{{ item.action }}</td>
-          <td>{{ item.details or '-' }}</td>
-        </tr>
+      {% set actor = users_map.get(item.user_id) %}
+      {% set days_ago = (today - item.created_at.date()).days %}
+      {% set period = 'today' if days_ago == 0 else 'week' if days_ago <= 7 else 'month' if days_ago <= 30 else 'older' %}
+      {% set action_text = item.action|lower %}
+      <article
+        class="ops-audit-item"
+        data-filter-item
+        data-search="{{ item.action }} {{ item.details }} {{ actor.full_name if actor else '' }} {{ actor.username if actor else '' }}"
+        data-user="{{ item.user_id or '' }}"
+        data-action="{{ item.action }}"
+        data-period="{{ period }}"
+      >
+        <div class="ops-audit-item__icon">
+          {% if 'создан' in action_text or 'добав' in action_text %}
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-plus-square"></use></svg>
+          {% elif 'удал' in action_text %}
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-trash"></use></svg>
+          {% elif 'сообщ' in action_text or 'чат' in action_text %}
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-message"></use></svg>
+          {% elif 'стад' in action_text or 'статус' in action_text %}
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-activity"></use></svg>
+          {% else %}
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-shield"></use></svg>
+          {% endif %}
+        </div>
+        <div class="ops-audit-item__content">
+          <div class="ops-audit-item__top">
+            <div>
+              <h3 class="ops-audit-item__title">{{ item.action }}</h3>
+              <div class="ops-audit-item__meta">
+                <span>{{ actor.full_name or actor.username if actor else 'Система' }}</span>
+                <span>{{ item.created_at.strftime('%d.%m.%Y %H:%M') }}</span>
+                <span class="ops-audit-item__pill">{{ 'Сегодня' if period == 'today' else '7 дней' if period == 'week' else '30 дней' if period == 'month' else 'Архив' }}</span>
+              </div>
+            </div>
+          </div>
+          <p class="ops-audit-item__desc">{{ item.details or 'Дополнительные детали не указаны.' }}</p>
+        </div>
+      </article>
       {% else %}
-        <tr><td colspan="4">Записей пока нет.</td></tr>
+      <div class="portal-empty">
+        <div class="portal-empty__icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-activity"></use></svg>
+        </div>
+        <h3>Журнал действий пока пуст</h3>
+        <p>После действий пользователей в системе здесь появится аудит событий с полным контекстом.</p>
+      </div>
       {% endfor %}
-      </tbody>
-    </table>
+    </div>
   </div>
 </section>
 {% endblock %}

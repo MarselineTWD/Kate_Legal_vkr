@@ -166,7 +166,8 @@
   if (!groups.length) return;
 
   groups.forEach((group) => {
-    const scope = group.closest('.portal-card') || group.parentElement || document;
+    const explicitRoot = group.closest('[data-filter-root]');
+    const scope = explicitRoot || group.closest('.portal-page') || group.parentElement || document;
     const buttons = Array.from(group.querySelectorAll('[data-filter-button]'));
     const items = Array.from(scope.querySelectorAll('[data-filter-item]'));
     if (!buttons.length || !items.length) return;
