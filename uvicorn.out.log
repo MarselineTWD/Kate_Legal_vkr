@@ -1,0 +1,21 @@
+INFO:     127.0.0.1:57324 - "POST /login HTTP/1.1" 303 See Other
+INFO:     127.0.0.1:57324 - "GET /app HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57324 - "POST /client/intake HTTP/1.1" 303 See Other
+INFO:     127.0.0.1:57324 - "GET /client/intake?created=1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57324 - "POST /client/intake HTTP/1.1" 303 See Other
+INFO:     127.0.0.1:57324 - "GET /client/intake?created=1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57324 - "POST /client/intake HTTP/1.1" 303 See Other
+INFO:     127.0.0.1:57324 - "GET /client/intake?created=1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57326 - "POST /login HTTP/1.1" 303 See Other
+INFO:     127.0.0.1:57326 - "GET /app HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57326 - "GET /app HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57326 - "POST /admin/intake/20/accept HTTP/1.1" 303 See Other
+INFO:     127.0.0.1:57326 - "GET /app HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57326 - "POST /admin/intake/21/clarify HTTP/1.1" 303 See Other
+INFO:     127.0.0.1:57326 - "GET /app HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57326 - "POST /admin/intake/22/close HTTP/1.1" 303 See Other
+INFO:     127.0.0.1:57326 - "GET /app HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57324 - "GET /client/cases/21 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57328 - "POST /login HTTP/1.1" 303 See Other
+INFO:     127.0.0.1:57328 - "GET /app HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57328 - "GET /app HTTP/1.1" 200 OK

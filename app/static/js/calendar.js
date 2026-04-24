@@ -6,6 +6,9 @@
   const prevButton = document.getElementById('calendar-prev-range');
   const nextButton = document.getElementById('calendar-next-range');
   const weekdays = document.getElementById('calendar-weekdays');
+  const listRangeForm = document.getElementById('calendar-list-range');
+  const listStartInput = document.getElementById('calendar-list-start');
+  const listEndInput = document.getElementById('calendar-list-end');
   const modeButtons = Array.from(document.querySelectorAll('[data-calendar-mode-button]'));
 
   if (!monthHost || !weekHost || !listHost || !labelNode || !prevButton || !nextButton) return;
@@ -23,6 +26,8 @@
   const today = parseDate(window.calendarToday) || startOfDay(new Date());
   let currentMode = 'month';
   let cursor = startOfDay(today);
+  let customListStart = null;
+  let customListEnd = null;
 
   const events = window.calendarEvents
     .map((item) => ({
@@ -156,7 +161,7 @@
     if (!items.length) {
       const empty = document.createElement('span');
       empty.className = 'ops-empty-note';
-      empty.textContent = isCompact ? 'Нет событий' : 'Спокойный день';
+      empty.textContent = 'Нет событий';
       card.appendChild(empty);
     }
 
@@ -205,9 +210,11 @@
 
   function renderList() {
     listHost.innerHTML = '';
-    const listStart = startOfDay(cursor);
-    const listEnd = addDays(listStart, 13);
+    const listStart = customListStart ? startOfDay(customListStart) : startOfDay(cursor);
+    const listEnd = customListEnd ? startOfDay(customListEnd) : addDays(listStart, 13);
     labelNode.textContent = `${capitalize(rangeMonthFormatter.format(listStart))} — ${capitalize(rangeMonthFormatter.format(listEnd))}`;
+    if (listStartInput && listStartInput.value !== toISODate(listStart)) listStartInput.value = toISODate(listStart);
+    if (listEndInput && listEndInput.value !== toISODate(listEnd)) listEndInput.value = toISODate(listEnd);
 
     const visible = events.filter((item) => item.parsedDate >= listStart && item.parsedDate <= listEnd);
 
@@ -267,6 +274,7 @@
     monthHost.hidden = mode !== 'month';
     weekHost.hidden = mode !== 'week';
     listHost.hidden = mode !== 'list';
+    if (listRangeForm) listRangeForm.hidden = mode !== 'list';
     if (weekdays) {
       weekdays.hidden = mode === 'list';
     }
@@ -283,6 +291,8 @@
       cursor = addDays(cursor, direction * 7);
       return;
     }
+    customListStart = null;
+    customListEnd = null;
     cursor = addDays(cursor, direction * 14);
   }
 
@@ -311,6 +321,17 @@
 
   nextButton.addEventListener('click', () => {
     shiftRange(1);
+    render();
+  });
+
+  listRangeForm?.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const start = parseDate(listStartInput?.value);
+    const end = parseDate(listEndInput?.value);
+    if (!start || !end) return;
+    customListStart = start <= end ? start : end;
+    customListEnd = start <= end ? end : start;
+    cursor = startOfDay(customListStart);
     render();
   });
 

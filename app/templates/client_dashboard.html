@@ -23,41 +23,42 @@
 
     <aside class="portal-card portal-card--accent dashboard-hero__aside">
       <div class="portal-card__eyebrow">Требует внимания</div>
-      <div class="dashboard-hero__summary">
-        <div>
-          <strong>{{ overdue_tasks }}</strong>
-          <span>просроченных задач</span>
-        </div>
-        <div>
-          <strong>{{ unread_notifications }}</strong>
-          <span>новых уведомлений</span>
-        </div>
-      </div>
-      {% set attention_state = namespace(admin_review_count=None, has_other_items=false) %}
+      {% set attention_state = namespace(admin_review_count='0') %}
       {% for item in attention_items %}
         {% if item.startswith('На проверке администратора:') %}
           {% set attention_state.admin_review_count = item.split(':', 1)[1].strip() %}
-        {% else %}
-          {% set attention_state.has_other_items = true %}
         {% endif %}
       {% endfor %}
 
-      {% if attention_state.admin_review_count %}
-      <div class="dashboard-hero__compact-note">
-        <span class="dashboard-hero__compact-label">На проверке администратором</span>
-        <strong>{{ attention_state.admin_review_count }}</strong>
-      </div>
-      {% endif %}
+      <div class="attention-status-grid">
+        <article class="attention-status-card{% if overdue_tasks|int > 0 %} is-alert{% endif %}">
+          <div class="attention-status-card__top">
+            <span class="attention-status-card__label">Просроченных задач</span>
+            <strong class="attention-status-card__value">{{ overdue_tasks }}</strong>
+          </div>
+          <small class="attention-status-card__hint">
+            {% if overdue_tasks|int > 0 %}
+            Требуют приоритетной обработки.
+            {% else %}
+            Критичных просрочек сейчас нет.
+            {% endif %}
+          </small>
+        </article>
 
-      {% if attention_state.has_other_items %}
-      <ul class="portal-bullet-list">
-        {% for item in attention_items %}
-        {% if not item.startswith('На проверке администратора:') %}
-        <li>{{ item }}</li>
-        {% endif %}
-        {% endfor %}
-      </ul>
-      {% endif %}
+        <article class="attention-status-card">
+          <div class="attention-status-card__top">
+            <span class="attention-status-card__label">На проверке администратором</span>
+            <strong class="attention-status-card__value">{{ attention_state.admin_review_count or '0' }}</strong>
+          </div>
+          <small class="attention-status-card__hint">
+            {% if (attention_state.admin_review_count or '0')|int > 0 %}
+            Ожидают распределения по юристам.
+            {% else %}
+            Новых заявок на проверке сейчас нет.
+            {% endif %}
+          </small>
+        </article>
+      </div>
     </aside>
   </div>
 
@@ -153,7 +154,7 @@
           </div>
           <div class="case-row__side">
             <div class="case-row__deadline{% if deadline_days is not none and deadline_days < 0 %} is-danger{% elif deadline_days is not none and deadline_days <= 3 %} is-warning{% endif %}">
-              <span>Дедлайн</span>
+              <span>Срок выполнения</span>
               <strong>{{ c.deadline.strftime('%d.%m.%Y') if c.deadline else 'Не назначен' }}</strong>
             </div>
             <div class="case-row__actions">
@@ -178,7 +179,7 @@
     <article class="portal-card portal-card--panel">
       <div class="portal-card__head">
         <div>
-          <div class="portal-card__eyebrow">События и дедлайны</div>
+          <div class="portal-card__eyebrow">События и сроки выполнения</div>
           <h2 class="portal-card__title">Ближайшие сроки</h2>
         </div>
         <a href="/client/calendar" class="portal-inline-link">

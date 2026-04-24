@@ -1,328 +1,331 @@
-{% extends "base.html" %}
-{% block title %}{{ legal_case.case_number }} — дело{% endblock %}
+﻿{% extends "base.html" %}
+{% block title %}{{ legal_case.case_number }} — обращение{% endblock %}
 {% block content %}
 {% set detail = case_detail %}
 {% set overview = detail.overview %}
-{% set stats = detail.stats %}
-{% set has_deadline = legal_case.deadline is not none %}
-{% set current_state = 'status-badge--warning' if not legal_case.intake_approved else 'status-badge--success' if legal_case.stage.value == 'COMPLETED' else 'status-badge--danger' if overview.risk_level == 'high' else 'status-badge--brand' %}
+{% set intake_status = (legal_case.intake_status or '') %}
+{% set can_edit_request = (not legal_case.intake_approved) and intake_status == 'NEEDS_CLARIFICATION' %}
+{% set can_withdraw_request = (not legal_case.intake_approved) and intake_status == 'PENDING_REVIEW' %}
 <section class="portal-page case-detail-page">
-  {% set page_error = request.query_params.get('error', '').strip() %}
-  {% if request.query_params.get('uploaded') == '1' %}
+  {% if request.query_params.get('edited') == '1' %}
   <div class="portal-alert portal-alert--success">
-    <strong>Документы загружены.</strong>
-    <span>Файлы добавлены к текущему делу.</span>
+    <strong>Обращение обновлено.</strong>
+    <span>Исправления сохранены и повторно отправлены администратору на проверку.</span>
   </div>
-  {% elif request.query_params.get('deleted') == '1' %}
+  {% elif request.query_params.get('supplemented') == '1' %}
   <div class="portal-alert portal-alert--success">
-    <strong>Документ удален.</strong>
-    <span>Файл удален из текущего дела.</span>
+    <strong>Дополнение отправлено.</strong>
+    <span>Материалы по обращению обновлены и направлены на повторную проверку.</span>
   </div>
-  {% elif page_error == 'duplicate' %}
+  {% elif request.query_params.get('error') == 'message' %}
   <div class="portal-alert portal-alert--danger">
-    <strong>Обнаружены дубликаты.</strong>
-    <span>Документы с одинаковыми именами загружать нельзя.</span>
+    <strong>Описание обращения не заполнено.</strong>
+    <span>Опишите проблему, чтобы отправить обращение на повторную проверку.</span>
   </div>
-  {% elif page_error == 'file' %}
+  {% elif request.query_params.get('error') == 'phone_missing' %}
+  <div class="portal-alert portal-alert--warning">
+    <strong>Телефон не указан в профиле.</strong>
+    <span>Чтобы разрешить связь по телефону, сначала заполните номер телефона в профиле клиента.</span>
+  </div>
+  {% elif request.query_params.get('error') == 'edit_forbidden' %}
   <div class="portal-alert portal-alert--danger">
-    <strong>Не выбран файл.</strong>
-    <span>Перетащите или выберите хотя бы один документ.</span>
+    <strong>Редактирование недоступно.</strong>
+    <span>Изменять можно только обращение, которое администратор вернул на доработку.</span>
+  </div>
+  {% elif request.query_params.get('withdrawn') == '1' %}
+  <div class="portal-alert portal-alert--success">
+    <strong>Обращение отозвано.</strong>
+    <span>Заявка снята с проверки администратора и больше не будет передана юристу.</span>
+  </div>
+  {% elif request.query_params.get('withdraw_forbidden') == '1' %}
+  <div class="portal-alert portal-alert--warning">
+    <strong>Отзыв недоступен.</strong>
+    <span>Отозвать можно только обращение, которое ещё находится на первичной проверке.</span>
   </div>
   {% endif %}
 
   <div class="portal-page__header">
     <div>
-      <div class="portal-page__eyebrow">Подробный просмотр дела</div>
-      <h1 class="portal-page__title">Центр управления конкретным делом</h1>
+      <div class="portal-page__eyebrow">Карточка обращения</div>
+      <h1 class="portal-page__title">{{ legal_case.title }}</h1>
       <p class="portal-page__intro">
-        В этом представлении собраны прогресс, сроки, документы, коммуникация и ключевые действия по делу в одном месте.
+        Здесь собраны статус обращения, комментарии администратора, документы и форма доработки, если обращение возвращено клиенту.
       </p>
     </div>
     <div class="portal-actions">
-      <a href="/client/cases" class="portal-button portal-button--secondary">Все дела</a>
+      <a href="/client/cases" class="portal-button portal-button--secondary">Все обращения</a>
+      {% if legal_case.intake_approved and detail.assigned_lawyer %}
+      <a href="/client/chat?case_id={{ legal_case.id }}" class="portal-button portal-button--primary">Написать юристу</a>
+      {% endif %}
     </div>
   </div>
 
-  <div class="case-detail-layout">
-    <main class="case-detail-main">
-      <article class="portal-card portal-card--hero case-hero">
-        <div class="case-hero__content">
-          <div class="case-hero__meta">
-            <span class="case-hero__number">{{ legal_case.case_number }}</span>
-            <span class="status-badge {{ current_state }}">
-              {% if not legal_case.intake_approved %}
-                На проверке
-              {% else %}
-                {{ detail.stage_label }}
-              {% endif %}
-            </span>
-          </div>
-
-          <h2 class="case-hero__title">{{ legal_case.title }}</h2>
-          <p class="case-hero__description">{{ legal_case.description or 'Описание ситуации будет отображено после уточнения деталей по делу.' }}</p>
-
-          <div class="case-hero__facts">
-            <div class="metric-chip">
-              <span>Дата создания</span>
-              <strong>{{ legal_case.opened_at.strftime('%d.%m.%Y') }}</strong>
-            </div>
-            <div class="metric-chip">
-              <span>Ответственный юрист</span>
-              <strong>{{ detail.assigned_lawyer.full_name or detail.assigned_lawyer.username if detail.assigned_lawyer else 'Будет назначен после проверки' }}</strong>
-              {% if detail.assigned_lawyer and detail.assigned_lawyer.specialization %}
-              <small>{{ detail.assigned_lawyer.specialization }}</small>
-              {% endif %}
-            </div>
-            <div class="metric-chip">
-              <span>Стадия</span>
-              <strong>{{ detail.stage_label }}</strong>
-            </div>
-            <div class="metric-chip{% if has_deadline and overview.risk_level == 'high' %} metric-chip--danger{% elif has_deadline and overview.risk_level == 'medium' %} metric-chip--warning{% endif %}">
-              <span>{% if has_deadline %}Дедлайн{% else %}Срок{% endif %}</span>
-              <strong>
-                {% if has_deadline %}
-                  {{ legal_case.deadline.strftime('%d.%m.%Y') }}
-                {% elif not legal_case.intake_approved %}
-                  Ожидает проверки
-                {% else %}
-                  Будет установлен юристом
-                {% endif %}
-              </strong>
-            </div>
-          </div>
+  <article class="portal-card portal-card--hero case-hero">
+    <div class="case-hero__content">
+      <div class="case-hero__meta">
+        <span class="case-hero__number">{{ legal_case.case_number }}</span>
+        {% if legal_case.is_consultation %}<span class="status-badge status-badge--info">Консультация</span>{% endif %}
+        {% if not legal_case.intake_approved and intake_status == 'NEEDS_CLARIFICATION' %}
+        <span class="status-badge status-badge--warning">{{ intake_status_labels['NEEDS_CLARIFICATION'] }}</span>
+        {% elif not legal_case.intake_approved and intake_status == 'WITHDRAWN' %}
+        <span class="status-badge status-badge--surface">{{ intake_status_labels['WITHDRAWN'] }}</span>
+        {% elif not legal_case.intake_approved and intake_status == 'CLOSED' %}
+        <span class="status-badge status-badge--surface">{{ intake_status_labels['CLOSED'] }}</span>
+        {% elif not legal_case.intake_approved %}
+        <span class="status-badge status-badge--warning">{{ intake_status_labels['PENDING_REVIEW'] }}</span>
+        {% else %}
+        <span class="status-badge status-badge--brand">{{ detail.stage_label }}</span>
+        {% endif %}
+      </div>
+      <p class="case-hero__description">{{ legal_case.description or 'Описание обращения пока не заполнено.' }}</p>
+      <div class="case-hero__facts">
+        <div class="metric-chip">
+          <span>Дата обращения</span>
+          <strong>{{ legal_case.opened_at.strftime('%d.%m.%Y') }}</strong>
         </div>
-
-        <aside class="case-hero__panel">
-          <div class="case-hero__panel-title">Требуется от клиента</div>
-          <div class="case-hero__panel-body{% if overview.requires_client_action %} is-accent{% endif %}">
-            <strong>
-              {% if overview.requires_client_action %}
-                Есть действия со стороны клиента
-              {% else %}
-                Всё под контролем
-              {% endif %}
-            </strong>
-            <p>{{ overview.client_expectation }}</p>
-          </div>
-          <div class="portal-actions portal-actions--column">
-            <a href="/client/chat?case_id={{ legal_case.id }}" class="portal-button portal-button--primary">Написать юристу</a>
-            <a href="/client/documents?case_id={{ legal_case.id }}#upload-document" class="portal-button portal-button--ghost">Загрузить документ</a>
-          </div>
-        </aside>
-      </article>
-
-    
-      <section id="events" class="case-section">
-        <div class="portal-card portal-card--panel">
-          <div class="portal-card__head">
-            <div>
-              <div class="portal-card__eyebrow">События и сроки</div>
-              <h2 class="portal-card__title">Ближайшие даты и напоминания</h2>
-            </div>
-          </div>
-          <div class="timeline-list">
-            {% for item in detail.event_items %}
-            <article class="timeline-item{% if item.urgency == 'danger' %} is-danger{% elif item.urgency == 'warning' %} is-warning{% endif %}">
-              <div class="timeline-item__date">
-                <strong>{{ item.date.strftime('%d') }}</strong>
-                <span>{{ item.date.strftime('%b') }}</span>
-                <small>{{ item.date.strftime('%Y') }}</small>
-              </div>
-              <div class="timeline-item__body">
-                <div class="timeline-item__top">
-                </div>
-                <h3>{{ item.title }}</h3>
-                {% if item.description %}
-                <p>{{ item.description }}</p>
-                {% endif %}
-              </div>
-            </article>
+        <div class="metric-chip">
+          <span>Категория</span>
+          <strong>{{ legal_case.category or 'Не указана' }}</strong>
+        </div>
+        <div class="metric-chip">
+          <span>Предпочтительная связь</span>
+          <strong>{{ preferred_contact_method_labels.get((legal_case.preferred_contact_method or 'CHAT').upper(), 'Чат в кабинете') }}</strong>
+        </div>
+        <div class="metric-chip">
+          <span>Телефон</span>
+          <strong>{% if legal_case.allow_phone_contact %}Разрешён{% else %}Не разрешён{% endif %}</strong>
+        </div>
+        <div class="metric-chip">
+          <span>Ответственный юрист</span>
+          <strong>
+            {% if detail.assigned_lawyer %}
+              {{ detail.assigned_lawyer.full_name or detail.assigned_lawyer.username }}
+            {% elif intake_status == 'WITHDRAWN' %}
+              Не назначается
             {% else %}
-            <div class="portal-empty portal-empty--compact">
-              <h3>Нет запланированных сроков</h3>
-              <p>Как только юрист добавит задачи, события или контрольные даты, они появятся здесь.</p>
+              Будет назначен после проверки
+            {% endif %}
+          </strong>
+        </div>
+        <div class="metric-chip">
+          <span>Стадия работы</span>
+          <strong>
+            {% if legal_case.intake_approved %}
+              {{ detail.stage_label }}
+            {% elif intake_status == 'WITHDRAWN' %}
+              Обращение отозвано
+            {% elif intake_status == 'CLOSED' %}
+              Обращение закрыто
+            {% else %}
+              Проверка обращения
+            {% endif %}
+          </strong>
+        </div>
+      </div>
+    </div>
+
+    <aside class="case-hero__panel">
+      <div class="case-hero__panel-title">Текущее состояние</div>
+      <div class="case-hero__panel-body{% if can_edit_request %} is-accent{% endif %}">
+        <strong>
+          {% if can_edit_request %}
+            Нужно доработать обращение
+          {% elif can_withdraw_request %}
+            Обращение ожидает проверки
+          {% elif not legal_case.intake_approved and intake_status == 'WITHDRAWN' %}
+            Обращение отозвано
+          {% elif not legal_case.intake_approved %}
+            Обращение ожидает проверки
+          {% else %}
+            Обращение принято в работу
+          {% endif %}
+        </strong>
+        <p>{{ overview.current_state }}</p>
+        {% if legal_case.intake_admin_comment %}
+        <p><strong>Комментарий администратора:</strong> {{ legal_case.intake_admin_comment }}</p>
+        {% endif %}
+      </div>
+      <div class="portal-actions request-actions">
+        <a href="/client/documents?case_id={{ legal_case.id }}" class="portal-button portal-button--ghost">Документы обращения</a>
+        {% if can_edit_request %}
+        <a href="#edit-request" class="portal-button portal-button--primary">Исправить обращение</a>
+        {% endif %}
+        {% if can_withdraw_request %}
+        <form method="post" action="/client/cases/{{ legal_case.id }}/withdraw" class="request-actions__form" onsubmit="return confirm('Отозвать обращение до рассмотрения администратором?');">
+          <input type="hidden" name="return_to" value="/client/cases/{{ legal_case.id }}" />
+          <button type="submit" class="portal-button portal-button--danger">Отозвать обращение</button>
+        </form>
+        {% endif %}
+      </div>
+    </aside>
+  </article>
+
+  <div class="portal-grid portal-grid--content">
+    <article class="portal-card portal-card--panel portal-card--span-2">
+      <div class="portal-card__head">
+        <div>
+          <div class="portal-card__eyebrow">Ключевая информация</div>
+          <h2 class="portal-card__title">Что происходит по обращению</h2>
+        </div>
+      </div>
+      <div class="overview-grid">
+        <article class="overview-panel">
+          <h3>Статус обращения</h3>
+          <p>{{ overview.current_state }}</p>
+          <p>{{ overview.lawyer_next_step }}</p>
+        </article>
+        <article class="overview-panel">
+          <h3>Следующий шаг</h3>
+          <p>{{ overview.nearest_stage }}</p>
+          <p>{% if overview.requires_client_action %}От клиента ожидаются дополнительные действия или документы.{% else %}Сейчас дополнительных действий со стороны клиента не требуется.{% endif %}</p>
+        </article>
+        <article class="overview-panel">
+          <h3>Контрольная дата</h3>
+          <p>{% if legal_case.deadline %}{{ legal_case.deadline.strftime('%d.%m.%Y') }}{% else %}Пока не установлена{% endif %}</p>
+          <p>Эта дата помогает синхронизировать действия команды и клиента по делу.</p>
+        </article>
+        <article class="overview-panel">
+          <h3>Документы</h3>
+          <p>Всего файлов: {{ detail.stats.documents_count }}</p>
+          <p>Сообщений по делу: {{ detail.stats.messages_count }}</p>
+        </article>
+      </div>
+    </article>
+
+    {% if can_edit_request %}
+    <article class="portal-card portal-card--panel portal-card--span-2" id="edit-request">
+      <div class="portal-card__head">
+        <div>
+          <div class="portal-card__eyebrow">Доработка обращения</div>
+          <h2 class="portal-card__title">Исправьте данные и отправьте обращение повторно</h2>
+        </div>
+      </div>
+      <form method="post" action="/client/cases/{{ legal_case.id }}/edit" class="portal-form" enctype="multipart/form-data">
+        <div class="portal-form-grid portal-form-grid--2">
+          <label class="portal-field">
+            <span>Тема обращения</span>
+            <input class="portal-control" type="text" name="case_title" value="{{ legal_case.title }}" required />
+          </label>
+          <label class="portal-field">
+            <span>Категория</span>
+            <select class="portal-control" name="category" required>
+              {% for option in ['Трудовое право','Семейное право','Наследственное право','Жилищное право','Земельное право','Договорное право','Корпоративное право','Налоговое право','Банкротство','Арбитражные споры','Административное право','Уголовное право','Защита прав потребителей','Споры с банками','Страховые споры','Исполнительное производство','Интеллектуальная собственность','Международное право','Миграционное право','Другое'] %}
+              <option value="{{ option }}" {% if (legal_case.category or '') == option %}selected{% endif %}>{{ option }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="portal-field">
+            <span>Предпочтительный способ связи</span>
+            <select class="portal-control" name="preferred_contact_method">
+              <option value="CHAT" {% if (legal_case.preferred_contact_method or 'CHAT') == 'CHAT' %}selected{% endif %}>Чат в кабинете</option>
+              <option value="EMAIL" {% if (legal_case.preferred_contact_method or '') == 'EMAIL' %}selected{% endif %}>Электронная почта</option>
+              <option value="PHONE" {% if (legal_case.preferred_contact_method or '') == 'PHONE' %}selected{% endif %}>Телефон</option>
+            </select>
+          </label>
+          <label class="portal-field portal-field--span-2">
+            <span>Дополнительные параметры</span>
+            <label class="comment-form__toggle" style="margin-bottom:8px;">
+              <input type="checkbox" name="allow_phone_contact" value="true" {% if legal_case.allow_phone_contact %}checked{% endif %} />
+              Можно ли связаться со мной по телефону
+            </label>
+            <small>В профиле должен быть заполнен номер телефона.</small>
+            <label class="comment-form__toggle" style="margin-top:10px;">
+              <input type="checkbox" name="is_consultation" value="true" {% if legal_case.is_consultation %}checked{% endif %} />
+              Консультационное обращение
+            </label>
+          </label>
+          <label class="portal-field portal-field--span-2">
+            <span>Описание проблемы</span>
+            <textarea class="portal-control portal-control--textarea" name="message" rows="8" required>{{ legal_case.description or '' }}</textarea>
+          </label>
+          <div class="portal-field portal-field--span-2">
+            <span>Добавить документы</span>
+            <div class="upload-zone upload-zone--compact" data-upload-zone>
+              <div class="upload-zone__icon">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-file"></use></svg>
+              </div>
+              <div class="upload-zone__copy">
+                <strong>Перетащите файлы сюда или выберите вручную</strong>
+                <p>Можно приложить документы и изображения: фото, сканы, скриншоты.</p>
+              </div>
+              <label class="portal-button portal-button--secondary upload-zone__button">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-paperclip"></use></svg>
+                <span>Выбрать файлы</span>
+                <input class="upload-zone__input" type="file" name="documents" multiple accept=".pdf,.doc,.docx,.txt,.rtf,.png,.jpg,.jpeg,.webp,.gif" />
+              </label>
+              <small class="upload-zone__meta" data-upload-label>Файлы не выбраны</small>
+              <ul class="upload-zone__pending" data-upload-pending hidden></ul>
             </div>
-            {% endfor %}
           </div>
         </div>
-      </section>
+        <div class="portal-form__footer">
+          <div class="portal-form__note">После отправки обращение снова перейдёт в статус проверки администратором.</div>
+          <button type="submit" class="portal-button portal-button--primary">Отправить на повторную проверку</button>
+        </div>
+      </form>
+    </article>
+    {% endif %}
 
-      <section id="overview" class="case-section">
-        <div class="portal-card portal-card--panel">
-          <div class="portal-card__head">
+    <article class="portal-card portal-card--panel">
+      <div class="portal-card__head">
+        <div>
+          <div class="portal-card__eyebrow">Документы</div>
+          <h2 class="portal-card__title">Последние файлы по обращению</h2>
+        </div>
+      </div>
+      <div class="mini-feed">
+        {% for item in detail.documents[:6] %}
+        <article class="mini-feed__item">
+          <div class="mini-feed__row">
             <div>
-              <div class="portal-card__eyebrow">Обзор</div>
-              <h2 class="portal-card__title">Ключевая информация по делу</h2>
+              <strong>{{ item.name }}</strong>
+              <p>{{ item.uploader_name }} • {{ item.created_at.strftime('%d.%m.%Y %H:%M') }}</p>
+            </div>
+            <div class="mini-feed__actions">
+              <a href="/client/documents/{{ item.id }}/view" class="mini-feed__action" title="Открыть" target="_blank" rel="noopener">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-eye"></use></svg>
+              </a>
             </div>
           </div>
-
-          <div class="overview-grid">
-            <article class="overview-panel">
-              <h3>Прогресс по этапам</h3>
-              <div class="stage-progress">
-                {% for step in detail.stage_progress %}
-                <div class="stage-progress__item is-{{ step.state }}">
-                  <span class="stage-progress__dot"></span>
-                  <div>
-                    <strong>{{ loop.index }}. {{ step.label }}</strong>
-                    <small>
-                      {% if step.state == 'done' %}
-                        Этап завершён
-                      {% elif step.state == 'current' %}
-                        Текущий этап
-                      {% else %}
-                        Следующий этап
-                      {% endif %}
-                    </small>
-                  </div>
-                </div>
-                {% endfor %}
-              </div>
-            </article>
-
-            <article class="overview-panel">
-              <h3>Последние документы</h3>
-              <div class="mini-feed">
-                {% for item in detail.latest_documents %}
-                <article class="mini-feed__item">
-                  <div class="mini-feed__row">
-                    <div>
-                      <strong>{{ item.name }}</strong>
-                      <p>{{ item.uploader_name }} • {{ item.created_at.strftime('%d.%m.%Y %H:%M') }}</p>
-                    </div>
-                    <div class="mini-feed__actions">
-                      <a href="/client/documents/{{ item.id }}/view" class="mini-feed__action" title="Открыть" target="_blank" rel="noopener">
-                        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-eye"></use></svg>
-                      </a>
-                      <form method="post" action="/client/documents/{{ item.id }}/delete">
-                        <input type="hidden" name="return_to" value="/client/cases/{{ legal_case.id }}#overview" />
-                        <button type="submit" class="mini-feed__action mini-feed__action--danger" title="Удалить">
-                          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-trash"></use></svg>
-                        </button>
-                      </form>
-                    </div>
-                  </div>
-                </article>
-                {% else %}
-                <form method="post" action="/client/documents/upload" class="portal-empty portal-empty--compact latest-documents-drop" enctype="multipart/form-data" data-upload-zone>
-                  <input type="hidden" name="legal_case_id" value="{{ legal_case.id }}" />
-                  <input type="hidden" name="return_to" value="/client/cases/{{ legal_case.id }}#overview" />
-                  <h3>Документов пока нет</h3>
-                  <p>Перетащите сюда документы или выберите вручную.</p>
-                  <label class="portal-button portal-button--secondary upload-zone__button">
-                    <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-paperclip"></use></svg>
-                    <span>Выбрать файлы</span>
-                    <input class="upload-zone__input" type="file" name="documents" multiple required />
-                  </label>
-                  <small class="upload-zone__meta" data-upload-label>Файлы не выбраны</small>
-                  <ul class="upload-zone__pending" data-upload-pending hidden></ul>
-                  <button type="submit" class="portal-button portal-button--primary" data-upload-submit disabled>Загрузить документы</button>
-                </form>
-                {% endfor %}
-              </div>
-            </article>
-
-            <article class="overview-panel">
-              <h3>Действия клиента</h3>
-              <div class="action-list">
-                {% for task in detail.client_tasks %}
-                <article class="action-list__item">
-                  <strong>{{ task.title }}</strong>
-                  <p>{{ task.description or 'Требуется действие по делу' }}</p>
-                </article>
-                {% endfor %}
-                {% if not detail.client_tasks %}
-                <article class="action-list__item">
-                  <strong>Ничего не требуется</strong>
-                  <p>Юрист пока не запрашивал действий по этому делу.</p>
-                </article>
-                {% endif %}
-              </div>
-            </article>
-          </div>
+        </article>
+        {% else %}
+        <div class="portal-empty portal-empty--compact">
+          <h3>Документы пока не загружены</h3>
+          <p>Файлы, приложенные к обращению, появятся здесь.</p>
         </div>
-      </section>
+        {% endfor %}
+      </div>
+    </article>
 
-      <section id="progress" class="case-section">
-        <div class="portal-card portal-card--panel">
-          <div class="portal-card__head">
-            <div>
-              <div class="portal-card__eyebrow">Ход дела</div>
-              <h2 class="portal-card__title">Хронология развития дела</h2>
-            </div>
-          </div>
-          <div class="timeline-list timeline-list--detailed">
-            {% for item in detail.timeline %}
-            <article class="timeline-item">
-              <div class="timeline-item__date">
-                <strong>{{ item.date.strftime('%d') }}</strong>
-                <span>{{ item.date.strftime('%b') }}</span>
-                <small>{{ item.date.strftime('%H:%M') }}</small>
-              </div>
-              <div class="timeline-item__body">
-                <div class="timeline-item__top">
-                  <span class="timeline-item__distance">{{ item.actor }}</span>
-                </div>
-                <h3>{{ item.title }}</h3>
-                <p>{{ item.description }}</p>
-              </div>
-            </article>
-            {% endfor %}
-          </div>
+    <article class="portal-card portal-card--panel">
+      <div class="portal-card__head">
+        <div>
+          <div class="portal-card__eyebrow">История</div>
+          <h2 class="portal-card__title">Последние изменения</h2>
         </div>
-      </section>
-
-      <section id="participants" class="case-section">
-        <div class="portal-card portal-card--panel">
-          <div class="portal-card__head">
-            <div>
-              <div class="portal-card__eyebrow">Участники</div>
-              <h2 class="portal-card__title">Кто участвует в деле</h2>
-            </div>
+      </div>
+      <div class="timeline-list timeline-list--detailed">
+        {% for item in detail.timeline[:8] %}
+        <article class="timeline-item">
+          <div class="timeline-item__date">
+            <strong>{{ item.date.strftime('%d') }}</strong>
+            <span>{{ item.date.strftime('%m') }}</span>
+            <small>{{ item.date.strftime('%Y') }}</small>
           </div>
-          <div class="participants-grid">
-            {% for item in detail.participants %}
-            <article class="participant-card">
-              <div class="participant-card__avatar">{{ item.initials }}</div>
-              <div class="participant-card__content">
-                <strong>{{ item.name }}</strong>
-                <span>{{ item.role }}</span>
-                <small>{{ item.meta }}</small>
-              </div>
-            </article>
-            {% endfor %}
+          <div class="timeline-item__body">
+            <div class="timeline-item__top"><span class="timeline-item__distance">{{ item.actor }}</span></div>
+            <h3>{{ item.title }}</h3>
+            <p>{{ item.description }}</p>
           </div>
+        </article>
+        {% else %}
+        <div class="portal-empty portal-empty--compact">
+          <h3>История пока пуста</h3>
+          <p>После первых действий по обращению здесь появится лента изменений.</p>
         </div>
-      </section>
-
-      {% if detail.finances %}
-      <section id="finances" class="case-section">
-        <div class="portal-card portal-card--panel">
-          <div class="portal-card__head">
-            <div>
-              <div class="portal-card__eyebrow">Финансы</div>
-              <h2 class="portal-card__title">Счета и оплаты по делу</h2>
-            </div>
-          </div>
-          <div class="finance-list">
-            {% for item in detail.finances %}
-            <article class="finance-row">
-              <div>
-                <strong>{{ item.number }}</strong>
-                <p>Оплатить до {{ item.due_date.strftime('%d.%m.%Y') }}</p>
-              </div>
-              <div class="finance-row__meta">
-                <strong>{{ '%.2f'|format(item.amount) }} ₽</strong>
-                <span class="status-badge status-badge--surface">{{ item.status }}</span>
-              </div>
-            </article>
-            {% endfor %}
-          </div>
-        </div>
-      </section>
-      {% endif %}
-
-    </main>
+        {% endfor %}
+      </div>
+    </article>
   </div>
 </section>
 {% endblock %}

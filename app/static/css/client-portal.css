@@ -53,7 +53,7 @@ body.client-portal .client-shell {
   display: grid;
   grid-template-columns: var(--cp-sidebar-width) minmax(0, 1fr);
   min-height: 100vh;
-  align-items: start;
+  align-items: stretch;
 }
 
 body.client-portal .client-shell__backdrop {
@@ -62,16 +62,18 @@ body.client-portal .client-shell__backdrop {
 
 body.client-portal .client-sidebar {
   position: sticky;
-  top: var(--cp-sticky-offset);
+  top: 0;
   z-index: 40;
   display: flex;
-  align-self: start;
+  align-self: stretch;
   flex-direction: column;
-  gap: 28px;
-  min-height: auto;
-  max-height: none;
+  gap: 20px;
+  width: var(--cp-sidebar-width);
+  min-height: 100vh;
+  height: 100vh;
+  max-height: 100vh;
   overflow: hidden;
-  padding: 28px 22px 24px;
+  padding: 24px 20px 22px;
   background:
     linear-gradient(180deg, rgba(20, 34, 62, 0.96), rgba(20, 30, 52, 0.92)),
     linear-gradient(180deg, rgba(91, 76, 230, 0.12), transparent 34%);
@@ -86,18 +88,22 @@ body.client-portal .client-sidebar__brand {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  flex-shrink: 0;
+  min-height: 56px;
 }
 
 body.client-portal .client-brand {
   display: inline-flex;
   align-items: center;
   gap: 14px;
+  min-width: 0;
   text-decoration: none;
 }
 
 body.client-portal .client-brand__mark {
   display: grid;
   place-items: center;
+  flex: 0 0 52px;
   width: 52px;
   height: 52px;
   border-radius: 18px;
@@ -107,6 +113,7 @@ body.client-portal .client-brand__mark {
 }
 
 body.client-portal .client-brand__mark svg {
+  flex-shrink: 0;
   width: 24px;
   height: 24px;
 }
@@ -114,6 +121,7 @@ body.client-portal .client-brand__mark svg {
 body.client-portal .client-brand__copy {
   display: grid;
   gap: 4px;
+  min-width: 0;
 }
 
 body.client-portal .client-brand__copy strong {
@@ -134,13 +142,23 @@ body.client-portal .client-topbar__menu {
   display: none;
 }
 
+body.client-portal .client-sidebar__nav {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  flex-direction: column;
+  gap: 22px;
+  overflow: visible;
+  padding: 2px 0 0;
+}
+
 body.client-portal .client-sidebar__section {
   display: grid;
   gap: 14px;
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   min-height: 0;
-  overflow-y: auto;
-  padding-right: 4px;
+  overflow: visible;
+  padding-right: 0;
 }
 
 body.client-portal .client-sidebar__caption {
@@ -152,15 +170,17 @@ body.client-portal .client-sidebar__caption {
 
 body.client-portal .client-nav {
   display: grid;
-  gap: 10px;
+  gap: 11px;
 }
 
 body.client-portal .client-nav__link {
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr);
-  gap: 14px;
+  grid-template-columns: 46px minmax(0, 1fr);
+  gap: 15px;
   align-items: center;
-  padding: 14px 14px 14px 12px;
+  min-width: 0;
+  min-height: 76px;
+  padding: 15px 15px 15px 13px;
   border-radius: 18px;
   text-decoration: none;
   color: rgba(237, 241, 255, 0.78);
@@ -192,14 +212,16 @@ body.client-portal .client-nav__link.is-active {
 body.client-portal .client-nav__icon {
   display: grid;
   place-items: center;
-  width: 44px;
-  height: 44px;
+  flex: 0 0 46px;
+  width: 46px;
+  height: 46px;
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 body.client-portal .client-nav__icon svg {
+  flex-shrink: 0;
   width: 20px;
   height: 20px;
 }
@@ -219,52 +241,7 @@ body.client-portal .client-nav__copy small {
   color: rgba(226, 232, 255, 0.62);
   font-size: 0.78rem;
   line-height: 1.35;
-}
-
-body.client-portal .client-sidebar__footer {
-  margin-top: 12px;
-  flex-shrink: 0;
-}
-
-body.client-portal .client-sidebar__support {
-  display: grid;
-  grid-template-columns: 40px minmax(0, 1fr);
-  gap: 14px;
-  padding: 16px;
-  border-radius: 20px;
-  background: rgba(255, 255, 255, 0.07);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-body.client-portal .client-sidebar__support-icon {
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 14px;
-  background: rgba(91, 76, 230, 0.34);
-}
-
-body.client-portal .client-sidebar__support-icon svg {
-  width: 18px;
-  height: 18px;
-}
-
-body.client-portal .client-sidebar__support-copy {
-  display: grid;
-  gap: 6px;
-}
-
-body.client-portal .client-sidebar__support-copy strong {
-  font-size: 0.92rem;
-  color: #ffffff;
-}
-
-body.client-portal .client-sidebar__support-copy p {
-  margin: 0;
-  color: rgba(230, 236, 255, 0.68);
-  font-size: 0.8rem;
-  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 body.client-portal .client-shell__main {
@@ -284,53 +261,21 @@ body.client-portal .client-shell__main {
     left: 0;
     bottom: 0;
     width: var(--cp-sidebar-width);
-    max-height: none;
-    overflow-y: auto;
-    scrollbar-width: thin;
-    scrollbar-color: rgba(233, 239, 255, 0.28) transparent;
-    gap: 16px;
-    padding: 16px 14px 12px;
+    height: 100vh;
+    min-height: 100vh;
+    max-height: 100vh;
+    overflow: hidden;
+    gap: 20px;
+    padding: 24px 20px 22px;
     transition: transform 0.24s ease, opacity 0.2s ease;
   }
 
-  body.client-portal .client-sidebar::-webkit-scrollbar {
-    width: 8px;
-  }
-
-  body.client-portal .client-sidebar::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  body.client-portal .client-sidebar::-webkit-scrollbar-thumb {
-    border-radius: 999px;
-    background: rgba(233, 239, 255, 0.28);
-  }
-
   body.client-portal .client-sidebar__section {
-    flex: none;
+    flex: 0 0 auto;
     min-height: auto;
     overflow: visible;
     padding-right: 0;
-    gap: 10px;
-  }
-
-  body.client-portal .client-sidebar__footer {
-    margin-top: 8px;
-  }
-
-  body.client-portal .client-sidebar__support {
-    gap: 10px;
-    padding: 12px;
-    border-radius: 16px;
-  }
-
-  body.client-portal .client-sidebar__support-copy {
-    gap: 4px;
-  }
-
-  body.client-portal .client-sidebar__support-copy p {
-    font-size: 0.76rem;
-    line-height: 1.35;
+    gap: 14px;
   }
 
   body.client-portal .client-shell__main {
@@ -723,55 +668,71 @@ body.client-portal .dashboard-hero__main {
 
 body.client-portal .dashboard-hero__aside {
   display: grid;
-  gap: 20px;
+  gap: 12px;
+  align-self: start;
 }
 
-body.client-portal .dashboard-hero__compact-note {
-  display: inline-flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  width: 100%;
-  padding: 10px 16px;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.03);
+body.client-portal .dashboard-hero__aside .portal-card__eyebrow {
+  margin-bottom: 0;
+  color: rgba(232, 238, 255, 0.72);
+  letter-spacing: 0.14em;
 }
 
-body.client-portal .dashboard-hero__compact-label {
-  font-size: 0.8rem;
-  line-height: 1.35;
-  color: rgba(234, 239, 255, 0.82);
-}
-
-body.client-portal .dashboard-hero__compact-note strong {
-  flex-shrink: 0;
-  font-size: 1.2rem;
-  line-height: 1;
-  color: #ffffff;
-}
-
-body.client-portal .dashboard-hero__summary {
+body.client-portal .attention-status-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
 
-body.client-portal .dashboard-hero__summary div {
+body.client-portal .attention-status-card {
   display: grid;
-  gap: 4px;
-  padding: 14px;
+  gap: 8px;
+  padding: 13px 16px;
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
-body.client-portal .dashboard-hero__summary strong {
-  font-size: 1.6rem;
+body.client-portal .attention-status-card__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+body.client-portal .attention-status-card__label {
+  color: rgba(234, 239, 255, 0.86);
+  font-size: 1rem;
+  line-height: 1.35;
+}
+
+body.client-portal .attention-status-card__value {
+  flex-shrink: 0;
+  color: #ffffff;
+  font-size: 1.72rem;
   line-height: 1;
+  letter-spacing: -0.03em;
 }
 
-body.client-portal .dashboard-hero__summary span {
-  font-size: 0.83rem;
+body.client-portal .attention-status-card__hint {
+  margin: 0;
+  color: rgba(222, 230, 252, 0.72);
+  font-size: 0.92rem;
+  line-height: 1.4;
+}
+
+body.client-portal .attention-status-card.is-alert {
+  border-color: rgba(201, 137, 19, 0.36);
+  background: linear-gradient(180deg, rgba(201, 137, 19, 0.14), rgba(255, 255, 255, 0.08));
+}
+
+body.client-portal .attention-status-card.is-alert .attention-status-card__value {
+  color: #ffe6b3;
+}
+
+body.client-portal .attention-status-card.is-alert .attention-status-card__hint {
+  color: rgba(255, 234, 191, 0.86);
 }
 
 body.client-portal .portal-grid {
@@ -980,6 +941,18 @@ body.client-portal .client-icon-button {
   color: var(--cp-navy);
 }
 
+body.client-portal .client-sidebar__close {
+  flex: 0 0 44px;
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 999px;
+}
+
+body.client-portal .client-sidebar__close svg {
+  width: 20px;
+  height: 20px;
+}
+
 body.client-portal .client-icon-button svg {
   width: 18px;
   height: 18px;
@@ -1150,6 +1123,12 @@ body.client-portal textarea.portal-control {
   padding-bottom: 14px;
   min-height: 152px;
   resize: none;
+}
+
+body.client-portal input.portal-control--tall {
+  min-height: 152px;
+  padding-top: 14px;
+  padding-bottom: 14px;
 }
 
 body.client-portal .portal-control:focus {
@@ -1584,11 +1563,26 @@ body.client-portal .notification-item__content {
   gap: 10px;
 }
 
+body.client-portal .notification-item__content h3 {
+  margin: 0;
+  color: var(--cp-navy);
+  font-size: 1.02rem;
+  line-height: 1.35;
+}
+
 body.client-portal .notification-item__meta {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+}
+
+body.client-portal .notification-item__meta div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 body.client-portal .notification-item__footer form {
@@ -1660,6 +1654,10 @@ body.client-portal .portal-modal {
 
 body.client-portal .portal-modal[hidden] {
   display: none !important;
+}
+
+body.client-portal.is-modal-open {
+  overflow: hidden;
 }
 
 body.client-portal .portal-modal__backdrop {
@@ -2068,6 +2066,18 @@ body.client-portal .portal-actions--column {
   display: grid;
 }
 
+body.client-portal .request-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+body.client-portal .request-actions__form {
+  display: inline-flex;
+  margin: 0;
+}
+
 body.client-portal .current-status-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -2412,9 +2422,12 @@ body.client-portal .side-links a:focus-visible {
     inset: 0 auto 0 0;
     z-index: 60;
     width: min(88vw, 340px);
+    height: 100vh;
+    min-height: 100vh;
     transform: translateX(-100%);
     max-height: 100vh;
-    overflow-y: auto;
+    overflow: hidden;
+    padding: 22px 18px 20px;
     transition: transform 0.24s ease;
   }
 
@@ -2492,6 +2505,10 @@ body.client-portal .side-links a:focus-visible {
   body.client-portal .case-kpis,
   body.client-portal .current-status-grid,
   body.client-portal .overview-grid {
+    grid-template-columns: 1fr;
+  }
+
+  body.client-portal .attention-status-grid {
     grid-template-columns: 1fr;
   }
 

@@ -323,7 +323,6 @@ input[type="reset"]:hover {
   gap: 14px;
 }
 .landing-page .nav-link-text {
-  color: #4f6581 !important;
   font-size: .8rem;
   letter-spacing: .05em;
 }

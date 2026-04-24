@@ -4,7 +4,8 @@
 
   roots.forEach((root) => {
     const buttons = Array.from(root.querySelectorAll('[data-view-button]'));
-    const panels = Array.from(root.querySelectorAll('[data-view-panel]'));
+    const panelScope = root.closest('[data-list-filter-root]') || root;
+    const panels = Array.from(panelScope.querySelectorAll('[data-view-panel]'));
     if (!buttons.length || !panels.length) return;
 
     const applyView = (viewName) => {
@@ -55,7 +56,8 @@
           const key = select.dataset.filterSelect || '';
           const expected = normalize(select.value);
           if (!key || !expected) return true;
-          return normalize(item.dataset[key]) === expected;
+          const actual = normalize(item.dataset[key]);
+          return actual.split(/\s*,\s*/).filter(Boolean).includes(expected) || actual === expected;
         });
 
         const isVisible = matchesSearch && matchesSelects;

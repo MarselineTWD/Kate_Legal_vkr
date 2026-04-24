@@ -1,22 +1,69 @@
 ﻿{% extends "base.html" %}
-{% block title %}РљР»РёРµРЅС‚С‹{% endblock %}
+{% block title %}Клиенты{% endblock %}
 {% block content %}
 <section class="portal-page clients-shell" data-clients-shell data-initial-chat-client-id="{{ initial_chat_client_id or '' }}">
   {% if created %}
   <div class="portal-alert portal-alert--success">
-    <strong>РљР»РёРµРЅС‚ РґРѕР±Р°РІР»РµРЅ.</strong>
-    <span>РљР°СЂС‚РѕС‡РєР° РєР»РёРµРЅС‚Р° СЃРѕР·РґР°РЅР° Рё РґРѕСЃС‚СѓРїРЅР° РІ СЂР°Р±РѕС‡РµРј РєРѕРЅС‚СѓСЂРµ РєР°Р±РёРЅРµС‚Р°.</span>
+    <strong>Клиент добавлен.</strong>
+    <span>Карточка клиента создана и доступна в рабочем контуре кабинета.</span>
+  </div>
+  {% endif %}
+  {% if created_client_password %}
+  <div class="portal-alert portal-alert--success portal-alert--stacked">
+    <strong>Данные для входа клиента готовы.</strong>
+    <span>Передайте клиенту логин и временный пароль. После создания администратор больше не управляет этим паролем.</span>
+    <div class="generated-secret-card">
+      <div><span>Клиент</span><strong>{{ created_client_name }}</strong></div>
+      <div><span>Email для входа</span><strong>{{ created_client_email }}</strong></div>
+      <div><span>Сгенерированный пароль</span><strong>{{ created_client_password }}</strong></div>
+    </div>
+  </div>
+  {% endif %}
+  {% if deleted %}
+  <div class="portal-alert portal-alert--success">
+    <strong>Сущность удалена.</strong>
+    <span>Карточка клиента или связанное дело удалены из рабочего контура.</span>
+  </div>
+  {% endif %}
+  {% if lawyer_removed %}
+  <div class="portal-alert portal-alert--success">
+    <strong>Юрист удален из обращения.</strong>
+    <span>Состав команды по заявке обновлен.</span>
+  </div>
+  {% endif %}
+  {% if error == 'invalid' %}
+  <div class="portal-alert portal-alert--warning">
+    <strong>Недостаточно данных.</strong>
+    <span>Укажите корректное имя клиента, чтобы создать карточку.</span>
+  </div>
+  {% elif error == 'email' %}
+  <div class="portal-alert portal-alert--danger">
+    <strong>Некорректный email.</strong>
+    <span>Проверьте адрес электронной почты и повторите создание карточки клиента.</span>
+  </div>
+  {% elif error == 'email_exists' %}
+  <div class="portal-alert portal-alert--warning">
+    <strong>Почта уже используется.</strong>
+    <span>Укажите другой email, который еще не привязан к клиенту или пользователю системы.</span>
   </div>
   {% endif %}
 
   <div class="portal-page__header">
     <div>
-      <div class="portal-page__eyebrow">Р Р°Р·РґРµР» РєР»РёРµРЅС‚РѕРІ</div>
-      <h1 class="portal-page__title">РљР»РёРµРЅС‚СЃРєРёР№ РєРѕРЅС‚СѓСЂ Рё РєРѕРјРјСѓРЅРёРєР°С†РёРё</h1>
+      <div class="portal-page__eyebrow">Раздел клиентов</div>
+      <h1 class="portal-page__title">Клиентский контур и коммуникации</h1>
       <p class="portal-page__intro">
-        Р’ РґР°РЅРЅРѕРј СЂР°Р·РґРµР»Рµ РїСЂРµРґСЃС‚Р°РІР»РµРЅ СЃС‚СЂСѓРєС‚СѓСЂРёСЂРѕРІР°РЅРЅС‹Р№ РїРµСЂРµС‡РµРЅСЊ РєР»РёРµРЅС‚РѕРІ СЃ РІРѕР·РјРѕР¶РЅРѕСЃС‚СЊСЋ РїРѕРёСЃРєР°, РєРѕРЅС‚СЂРѕР»СЏ Р°РєС‚РёРІРЅРѕСЃС‚Рё, РїРµСЂРµС…РѕРґР° Рє РїРµСЂРµРїРёСЃРєРµ, Р° С‚Р°РєР¶Рµ РґРѕСЃС‚СѓРїР° Рє СЃРІСЏР·Р°РЅРЅС‹Рј РґРµР»Р°Рј Рё Р·Р°РґР°С‡Р°Рј.      </p>
+        В данном разделе представлен структурированный перечень клиентов с возможностью поиска, контроля активности и быстрого перехода к связанным обращениям, делам и задачам.
+      </p>
     </div>
-    
+    {% if user.role.value == 'ADMIN' %}
+    <div class="portal-actions">
+      <a href="#new-client" class="portal-button portal-button--primary">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-plus-square"></use></svg>
+        <span>Добавить клиента</span>
+      </a>
+    </div>
+    {% endif %}
   </div>
 
   <div class="ops-kpi-grid ops-kpi-grid--4">
@@ -25,9 +72,9 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-users"></use></svg>
       </div>
       <div class="ops-kpi-card__content">
-        <span>Р’СЃРµРіРѕ РєР»РёРµРЅС‚РѕРІ</span>
+        <span>Всего клиентов</span>
         <strong>{{ totals.clients }}</strong>
-        <small>РљР°СЂС‚РѕС‡РєРё РІ С‚РµРєСѓС‰РµРј РєР°С‚Р°Р»РѕРіРµ</small>
+        <small>Карточки в текущем каталоге</small>
       </div>
     </article>
     <article class="ops-kpi-card">
@@ -35,9 +82,9 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-briefcase"></use></svg>
       </div>
       <div class="ops-kpi-card__content">
-        <span>РђРєС‚РёРІРЅС‹Рµ РґРµР»Р°</span>
+        <span>Активные дела</span>
         <strong>{{ totals.active_cases }}</strong>
-        <small>РћС‚РєСЂС‹С‚С‹Рµ РґРµР»Р° РїРѕ РІСЃРµРј РєР»РёРµРЅС‚Р°Рј</small>
+        <small>Открытые дела по всем клиентам</small>
       </div>
     </article>
     <article class="ops-kpi-card">
@@ -45,12 +92,127 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-message"></use></svg>
       </div>
       <div class="ops-kpi-card__content">
-        <span>Р§Р°С‚ Рё РёСЃС‚РѕСЂРёСЏ</span>
+        <span>Карточки с активностью</span>
         <strong>{{ client_rows|length }}</strong>
-        <small>РљР°СЂС‚РѕС‡РєРё РіРѕС‚РѕРІС‹ Рє Р±С‹СЃС‚СЂРѕРјСѓ РѕС‚РєСЂС‹С‚РёСЋ РєРѕРјРјСѓРЅРёРєР°С†РёРё</small>
+        <small>Карточки готовы к быстрому открытию и администрированию</small>
       </div>
     </article>
   </div>
+
+  {% if user.role.value == 'ADMIN' %}
+  <details class="ops-disclosure" id="new-client">
+    <summary>
+      <div class="ops-disclosure__summary-copy">
+        <strong>Добавить клиента</strong>
+        <span>Новая карточка создается в едином формате клиентского профиля, а пароль генерируется системой автоматически.</span>
+      </div>
+      <span class="ops-disclosure__summary-icon">
+        <span>Открыть форму</span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-chevron-down"></use></svg>
+      </span>
+    </summary>
+    <div class="ops-disclosure__body">
+      <form method="post" action="/clients/new" class="portal-form" data-admin-client-form>
+        <div class="portal-form__section">
+          <div class="portal-form__section-head">
+            <span class="portal-step">1</span>
+            <div>
+              <h3>Основные сведения</h3>
+              <p>Используйте те же поля, что и в профиле клиента, чтобы карточка сразу была пригодна для работы юристов.</p>
+            </div>
+          </div>
+
+          <div class="portal-form-grid portal-form-grid--2">
+            <label class="portal-field">
+              <span data-admin-client-name-label>ФИО</span>
+              <input class="portal-control" type="text" name="name" required />
+            </label>
+            <label class="portal-field">
+              <span>Тип клиента</span>
+              <select class="portal-control" name="client_type" data-admin-client-type-select>
+                <option value="PERSON" selected>Физлицо</option>
+                <option value="ORGANIZATION">Юрлицо</option>
+              </select>
+            </label>
+            <label class="portal-field">
+              <span>Электронная почта</span>
+              <input class="portal-control" type="email" name="email" required />
+            </label>
+            <label class="portal-field">
+              <span>Телефон</span>
+              <input class="portal-control" type="text" name="phone" maxlength="20" placeholder="+7 (900) 000-00-00" data-phone-mask />
+            </label>
+            <label class="portal-field portal-field--span-2">
+              <span>Адрес</span>
+              <input class="portal-control portal-control--tall" type="text" name="address" />
+            </label>
+            <label class="portal-field portal-field--span-2">
+              <span>Описание проблемы / запроса</span>
+              <textarea class="portal-control portal-control--textarea" name="notes" rows="4" placeholder="Кратко опишите контекст клиента и ожидания по работе"></textarea>
+            </label>
+          </div>
+        </div>
+
+        <div class="portal-form__section" data-admin-client-section="ORGANIZATION" hidden style="display: none;" aria-hidden="true">
+          <div class="portal-form__section-head">
+            <span class="portal-step">2</span>
+            <div>
+              <h3>Реквизиты организации</h3>
+              <p>Для юридического лица заполните реквизиты, которые понадобятся в карточке и документах.</p>
+            </div>
+          </div>
+          <div class="portal-form-grid portal-form-grid--2">
+            <label class="portal-field">
+              <span>ИНН</span>
+              <input class="portal-control" type="text" name="inn" inputmode="numeric" maxlength="14" data-digits-group="4" />
+            </label>
+            <label class="portal-field">
+              <span>ОГРН</span>
+              <input class="portal-control" type="text" name="ogrn" inputmode="numeric" maxlength="19" data-digits-group="3" />
+            </label>
+            <label class="portal-field">
+              <span>Банковские реквизиты</span>
+              <textarea class="portal-control portal-control--textarea" name="bank_details" rows="3"></textarea>
+            </label>
+            <label class="portal-field">
+              <span>Паспортные данные представителя</span>
+              <textarea class="portal-control portal-control--textarea" name="passport_details" rows="3"></textarea>
+            </label>
+            <label class="portal-field portal-field--span-2">
+              <span>Иные сведения</span>
+              <textarea class="portal-control portal-control--textarea" name="other_details" rows="2"></textarea>
+            </label>
+          </div>
+        </div>
+
+        <div class="portal-form__section" data-admin-client-section="PERSON">
+          <div class="portal-form__section-head">
+            <span class="portal-step">2</span>
+            <div>
+              <h3>Данные физлица</h3>
+              <p>Для физического лица в карточке хранятся персональные сведения и паспортные данные.</p>
+            </div>
+          </div>
+          <div class="portal-form-grid">
+            <label class="portal-field">
+              <span>Паспортные данные</span>
+              <textarea class="portal-control portal-control--textarea" name="passport_details" rows="3"></textarea>
+            </label>
+            <label class="portal-field">
+              <span>Иные сведения</span>
+              <textarea class="portal-control portal-control--textarea" name="other_details" rows="2"></textarea>
+            </label>
+          </div>
+        </div>
+
+        <div class="portal-form__footer portal-form__footer--split">
+          <div class="portal-form__note">После сохранения система автоматически сформирует пароль фиксированной длины и покажет его один раз на этой странице.</div>
+          <button type="submit" class="portal-button portal-button--primary">Создать клиента</button>
+        </div>
+      </form>
+    </div>
+  </details>
+  {% endif %}
 
   
 
@@ -58,25 +220,25 @@
     <div class="ops-toolbar">
       <div class="ops-toolbar__header">
         <div>
-          <h2 class="ops-toolbar__title">РљР°С‚Р°Р»РѕРі РєР»РёРµРЅС‚РѕРІ</h2>
-          <p class="ops-toolbar__subtitle">РџРѕРёСЃРє, С„РёР»СЊС‚СЂР°С†РёСЏ Рё Р±С‹СЃС‚СЂС‹Рµ РґРµР№СЃС‚РІРёСЏ Р±РµР· РїРµСЂРµС…РѕРґР° РІ С‚СЏР¶РµР»С‹Рµ Р°РґРјРёРЅСЃРєРёРµ С‚Р°Р±Р»РёС†С‹.</p>
+          <h2 class="ops-toolbar__title">Каталог клиентов</h2>
+          <p class="ops-toolbar__subtitle">Поиск, фильтрация и быстрые действия без перехода в тяжелые админские таблицы.</p>
         </div>
 
       </div>
       <div class="ops-toolbar__body">
         <label class="ops-search">
           <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-search"></use></svg>
-          <input class="portal-control" type="search" value="{{ q }}" placeholder="РџРѕРёСЃРє РїРѕ РёРјРµРЅРё, email, С‚РµР»РµС„РѕРЅСѓ РёР»Рё РїРѕСЃР»РµРґРЅРµРјСѓ РґРµР№СЃС‚РІРёСЋ" data-filter-search />
+          <input class="portal-control" type="search" value="{{ q }}" placeholder="Поиск по имени, email, телефону или последнему действию" data-filter-search />
         </label>
         <select class="portal-control ops-filter-select" data-filter-select="clientType">
-          <option value="">Р’СЃРµ С‚РёРїС‹</option>
-          <option value="ORGANIZATION">РћСЂРіР°РЅРёР·Р°С†РёРё</option>
-          <option value="PERSON">Р¤РёР·Р»РёС†Р°</option>
+          <option value="">Все типы</option>
+          <option value="ORGANIZATION">Организации</option>
+          <option value="PERSON">Физлица</option>
         </select>
         <select class="portal-control ops-filter-select" data-filter-select="clientActivity">
-          <option value="">Р’СЃСЏ Р°РєС‚РёРІРЅРѕСЃС‚СЊ</option>
-          <option value="active">Р•СЃС‚СЊ Р°РєС‚РёРІРЅС‹Рµ РґРµР»Р°</option>
-          <option value="idle">Р‘РµР· Р°РєС‚РёРІРЅС‹С… РґРµР»</option>
+          <option value="">Вся активность</option>
+          <option value="active">Есть активные дела</option>
+          <option value="idle">Без активных дел</option>
         </select>
       </div>
     </div>
@@ -92,25 +254,24 @@
       >
         <div class="ops-client-card__header">
           <div>
-            <div class="ops-record-card__number">{{ 'РћСЂРіР°РЅРёР·Р°С†РёСЏ' if row.client.client_type == 'ORGANIZATION' else 'Р¤РёР·Р»РёС†Рѕ' }}</div>
+            <div class="ops-record-card__number">{{ 'Организация' if row.client.client_type == 'ORGANIZATION' else 'Физлицо' }}</div>
             <h3>{{ row.client.name }}</h3>
           </div>
           <span class="status-badge {% if row.cases_active %}status-badge--brand{% else %}status-badge--surface{% endif %}">
-            {% if row.cases_active %}Р’ СЂР°Р±РѕС‚Рµ{% else %}Р‘РµР· Р°РєС‚РёРІРЅС‹С… РґРµР»{% endif %}
+            {% if row.cases_active %}В работе{% else %}Без активных дел{% endif %}
           </span>
         </div>
 
         <div class="ops-inline-meta">
           <span>{{ row.contact_line }}</span>
           {% if row.last_interaction_dt %}
-          <span>РџРѕСЃР»РµРґРЅСЏСЏ Р°РєС‚РёРІРЅРѕСЃС‚СЊ: {{ row.last_interaction_dt.strftime('%d.%m.%Y %H:%M') }}</span>
+          <span>Последняя активность: {{ row.last_interaction_dt.strftime('%d.%m.%Y %H:%M') }}</span>
           {% endif %}
         </div>
 
         <div class="ops-meta-grid">
-          <div class="ops-meta-item"><span>РђРєС‚РёРІРЅС‹Рµ РґРµР»Р°</span><strong>{{ row.cases_active }}</strong></div>
-          <div class="ops-meta-item"><span>Р’СЃРµРіРѕ РґРµР»</span><strong>{{ row.cases_total }}</strong></div>
-          <div class="ops-meta-item"><span>Р”РѕРєСѓРјРµРЅС‚С‹</span><strong>{{ row.documents_count }}</strong></div>
+          <div class="ops-meta-item"><span>Активные дела</span><strong>{{ row.cases_active }}</strong></div>
+          <div class="ops-meta-item"><span>Всего дел</span><strong>{{ row.cases_total }}</strong></div>
         </div>
 
         <p class="ops-record-card__desc">{{ row.last_interaction_text }}</p>
@@ -123,9 +284,15 @@
             data-client-id="{{ row.client.id }}"
             data-client-name="{{ row.client.name }}"
           >
-            РћС‚РєСЂС‹С‚СЊ РєР°СЂС‚РѕС‡РєСѓ РєР»РёРµРЅС‚Р°
+            Открыть карточку клиента
           </button>
-          <a href="/cases?client_id={{ row.client.id }}" class="portal-button portal-button--ghost">Р—Р°РІРµСЃС‚Рё РґРµР»Рѕ</a>
+          <a href="/cases?client_id={{ row.client.id }}" class="portal-button portal-button--ghost">Завести дело</a>
+          {% if user.role.value == 'ADMIN' %}
+          <form method="post" action="/clients/{{ row.client.id }}/delete" data-confirm-form data-confirm-title="Удалить клиента?" data-confirm-text="Будут удалены карточка клиента, все связанные обращения, дела, задачи, документы и сообщения. Действие нельзя быстро отменить." data-confirm-submit-label="Удалить клиента">
+            <input type="hidden" name="return_to" value="/clients" />
+            <button type="submit" class="portal-button portal-button--danger-ghost">Удалить</button>
+          </form>
+          {% endif %}
         </div>
       </article>
       {% else %}
@@ -133,8 +300,8 @@
         <div class="portal-empty__icon">
           <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-users"></use></svg>
         </div>
-        <h3>РљР»РёРµРЅС‚РѕРІ РїРѕРєР° РЅРµС‚</h3>
-        <p>РЎРѕР·РґР°Р№С‚Рµ РїРµСЂРІСѓСЋ РєР°СЂС‚РѕС‡РєСѓ РєР»РёРµРЅС‚Р°, С‡С‚РѕР±С‹ СЃРІСЏР·Р°С‚СЊ РµРµ СЃ РґРµР»Р°РјРё, РєРѕРјРјСѓРЅРёРєР°С†РёСЏРјРё Рё РґРѕРєСѓРјРµРЅС‚Р°РјРё.</p>
+        <h3>Клиентов пока нет</h3>
+        <p>Создайте первую карточку клиента, чтобы связать ее с делами, коммуникациями и документами.</p>
       </div>
       {% endfor %}
     </div>
@@ -142,168 +309,164 @@
 
   <section class="client-chat-page" data-client-chat-page hidden style="display:none;">
     <div class="client-chat-page__header">
-      <button type="button" class="portal-button portal-button--ghost client-chat-page__back" data-client-chat-back>РќР°Р·Р°Рґ Рє РєР°С‚Р°Р»РѕРіСѓ</button>
+      <button type="button" class="portal-button portal-button--ghost client-chat-page__back" data-client-chat-back>Назад к каталогу</button>
       <div class="client-chat-page__heading">
-        <h2 id="client-chat-title">РљР°СЂС‚РѕС‡РєР° РєР»РёРµРЅС‚Р°</h2>
+        <h2 id="client-chat-title">Карточка клиента</h2>
         <div class="client-chat-page__meta" id="client-chat-meta"></div>
       </div>
     </div>
 
     <div class="client-chat-page__stack">
       <div class="workspace-card client-chat-overview-card">
-        <div class="workspace-card__header"><h3>РћР±Р·РѕСЂ РєР»РёРµРЅС‚Р° Рё РѕСЃРЅРѕРІРЅС‹Рµ РґР°РЅРЅС‹Рµ</h3></div>
+        <div class="workspace-card__header"><h3>Обзор клиента и основные данные</h3></div>
         <div class="client-chat-overview-card__grid">
           <div class="client-overview-kpis">
-            <article><span>Р’СЃРµРіРѕ РґРµР»</span><strong id="overview-cases-total">0</strong></article>
-            <article><span>РђРєС‚РёРІРЅС‹Рµ РґРµР»Р°</span><strong id="overview-cases-active">0</strong></article>
-            <article><span>РђРєС‚РёРІРЅС‹Рµ Р·Р°РґР°С‡Рё</span><strong id="overview-tasks-active">0</strong></article>
-            <article><span>РџСЂРѕСЃСЂРѕС‡РµРЅРѕ</span><strong id="overview-tasks-overdue">0</strong></article>
+            <article><span>Всего дел</span><strong id="overview-cases-total">0</strong></article>
+            <article><span>Активные дела</span><strong id="overview-cases-active">0</strong></article>
+            <article><span>Активные задачи</span><strong id="overview-tasks-active">0</strong></article>
+            <article><span>Просрочено</span><strong id="overview-tasks-overdue">0</strong></article>
           </div>
           <div class="workspace-meta">
-            <span class="workspace-meta__label">РўРёРї РєР»РёРµРЅС‚Р°</span>
+            <span class="workspace-meta__label">Тип клиента</span>
             <strong id="overview-client-type">—</strong>
-            <span class="workspace-meta__label">Название организации</span>
+            <span class="workspace-meta__label" id="overview-client-organization-label">Название организации</span>
             <strong id="overview-client-organization">—</strong>
             <span class="workspace-meta__label">Адрес</span>
             <strong id="overview-client-address">—</strong>
-            <span class="workspace-meta__label">Проблема клиента</span>
+            <span class="workspace-meta__label" id="overview-client-problem-label">Проблема клиента</span>
             <strong id="overview-client-problem">—</strong>
-            <span class="workspace-meta__label">Примечание</span>
+            <span class="workspace-meta__label" id="overview-client-notes-label">Примечание</span>
             <strong id="overview-client-notes">—</strong>
             <span class="workspace-meta__label">Паспортные данные</span>
             <strong id="overview-client-passport">—</strong>
-            <span class="workspace-meta__label">Реквизиты организации</span>
+            <span class="workspace-meta__label" id="overview-client-requisites-label">Реквизиты организации</span>
             <strong id="overview-client-requisites">—</strong>
           </div>
         </div>
       </div>
 
       <div class="client-chat-actions-row">
-        <div class="workspace-card">
-          <div class="workspace-card__header"><h3>Р”РѕР±Р°РІРёС‚СЊ РґРµР»Рѕ</h3></div>
-          <form method="post" action="/cases/new" class="client-chat-action-form">
-            <input type="hidden" name="client_id" id="overview-new-case-client-id" />
-            <input type="hidden" name="return_to" id="overview-new-case-return-to" value="/clients" />
-            <label class="portal-field">
-              <span>РќР°Р·РІР°РЅРёРµ РґРµР»Р°</span>
-              <input class="portal-control" type="text" name="title" required />
-            </label>
-            <label class="portal-field">
-              <span>РљР°С‚РµРіРѕСЂРёСЏ</span>
-              <input class="portal-control" type="text" name="category" value="РћР±С‰РµРµ" required />
-            </label>
-            <label class="portal-field portal-field--span-2">
-              <span>РћРїРёСЃР°РЅРёРµ</span>
-              <textarea class="portal-control" name="description" rows="2"></textarea>
-            </label>
-            <label class="portal-field">
-              <span>РџСЂРёРѕСЂРёС‚РµС‚</span>
-              <select class="portal-control" name="priority">
-                <option value="LOW">РќРёР·РєРёР№</option>
-                <option value="MEDIUM" selected>РЎСЂРµРґРЅРёР№</option>
-                <option value="HIGH">Р’С‹СЃРѕРєРёР№</option>
-              </select>
-            </label>
-            <label class="portal-field">
-              <span>Р”РµРґР»Р°Р№РЅ</span>
-              <input class="portal-control" type="date" name="deadline" />
-            </label>
-            <button type="submit" class="portal-button portal-button--primary">РЎРѕР·РґР°С‚СЊ РґРµР»Рѕ</button>
-          </form>
-        </div>
+
 
         <div class="workspace-card">
-          <div class="workspace-card__header"><h3>Р”РѕР±Р°РІРёС‚СЊ Р·Р°РґР°С‡Сѓ</h3></div>
+          <div class="workspace-card__header"><h3>Добавить задачу в дело</h3></div>
           <form method="post" action="/tasks/new" class="client-chat-action-form">
             <input type="hidden" name="return_to" id="overview-new-task-return-to" value="/clients" />
             <label class="portal-field">
-              <span>Р”РµР»Рѕ</span>
+              <span>Дело</span>
               <select class="portal-control" name="legal_case_id" id="overview-task-case-select" required>
-                <option value="">Р’С‹Р±РµСЂРёС‚Рµ РґРµР»Рѕ</option>
+                <option value="">Выберите дело</option>
               </select>
+              <small>Консультационные обращения не показываются в списке задач.</small>
             </label>
             <label class="portal-field">
-              <span>Р—Р°РіРѕР»РѕРІРѕРє</span>
+              <span>Заголовок</span>
               <input class="portal-control" type="text" name="title" required />
             </label>
             <label class="portal-field portal-field--span-2">
-              <span>РћРїРёСЃР°РЅРёРµ</span>
+              <span>Описание</span>
               <textarea class="portal-control" name="description" rows="2"></textarea>
             </label>
             <label class="portal-field">
-              <span>РЎСЂРѕРє</span>
+              <span>Срок</span>
               <input class="portal-control" type="date" name="due_date" required />
             </label>
             <label class="portal-field">
-              <span>РџСЂРёРѕСЂРёС‚РµС‚</span>
+              <span>Приоритет</span>
               <select class="portal-control" name="priority">
-                <option value="LOW">РќРёР·РєРёР№</option>
-                <option value="MEDIUM" selected>РЎСЂРµРґРЅРёР№</option>
-                <option value="HIGH">Р’С‹СЃРѕРєРёР№</option>
+                <option value="LOW">Низкий</option>
+                <option value="MEDIUM" selected>Средний</option>
+                <option value="HIGH">Высокий</option>
               </select>
             </label>
-            <button type="submit" class="portal-button portal-button--primary">Р”РѕР±Р°РІРёС‚СЊ Р·Р°РґР°С‡Сѓ</button>
+            <button type="submit" class="portal-button portal-button--primary">Добавить задачу</button>
           </form>
         </div>
       </div>
 
       <div class="client-chat-visibility-grid">
-        <div class="workspace-card">
-          <div class="workspace-card__header"><h3>Р”РµР»Р° Рё РїСЂРёРѕСЂРёС‚РµС‚С‹</h3></div>
-          <ul class="workspace-list" id="overview-manage-cases">
-            <li class="workspace-list__empty">РќРµС‚ РґРµР» РґР»СЏ СЂРµРґР°РєС‚РёСЂРѕРІР°РЅРёСЏ</li>
-          </ul>
-        </div>
-
-        <div class="workspace-card">
-          <div class="workspace-card__header"><h3>Р”РµР»Р° РєР»РёРµРЅС‚Р°</h3></div>
-          <ul class="workspace-list" id="overview-recent-cases">
-            <li class="workspace-list__empty">РќРµС‚ РґР°РЅРЅС‹С…</li>
-          </ul>
-        </div>
-
-        <div class="workspace-card">
-          <div class="workspace-card__header"><h3>Р‘Р»РёР¶Р°Р№С€РёРµ Р·Р°РґР°С‡Рё</h3></div>
-          <ul class="workspace-list" id="overview-upcoming-tasks">
-            <li class="workspace-list__empty">РќРµС‚ РґР°РЅРЅС‹С…</li>
-          </ul>
-        </div>
-
-        <div class="workspace-card">
-          <div class="workspace-card__header"><h3>Р”РѕРєСѓРјРµРЅС‚С‹</h3></div>
-          <ul class="workspace-list" id="overview-recent-documents">
-            <li class="workspace-list__empty">РќРµС‚ РґР°РЅРЅС‹С…</li>
-          </ul>
-        </div>
-
-      </div>
-
-      <div class="client-chat-main">
-        <div class="workspace-card">
-          <div class="workspace-card__header">
-            <h3>РљРѕРјРјСѓРЅРёРєР°С†РёРё</h3>
-            <span class="status-badge status-badge--brand">Р Р°Р±РѕС‡РёР№ РєР°РЅР°Р»</span>
-          </div>
-          <div class="client-chat-thread client-chat-thread--page" id="client-chat-thread">
-            <p class="workspace-list__empty">Р’С‹Р±РµСЂРёС‚Рµ РєР»РёРµРЅС‚Р°, С‡С‚РѕР±С‹ РѕС‚РєСЂС‹С‚СЊ С‡Р°С‚.</p>
+        <div class="workspace-card client-requests-card">
+          <div class="workspace-card__header"><h3>Обращения клиента</h3></div>
+          <div class="ops-data-list client-requests-list" id="overview-client-requests">
+            <div class="workspace-list__empty">Обращения пока не созданы</div>
           </div>
         </div>
-
-        <form id="client-chat-form" class="client-chat-form client-chat-form--page">
-          <label>РЎРѕРѕР±С‰РµРЅРёРµ
-            <textarea name="message" rows="5" placeholder="Р’РІРµРґРёС‚Рµ СЃРѕРѕР±С‰РµРЅРёРµ РєР»РёРµРЅС‚Сѓ РёР»Рё Р·Р°С„РёРєСЃРёСЂСѓР№С‚Рµ С„Р°РєС‚ РѕР±СЂР°С‰РµРЅРёСЏ"></textarea>
-          </label>
-          <label class="comment-form__toggle">
-            <input type="checkbox" name="is_from_client" value="true" />
-            Р—Р°С„РёРєСЃРёСЂРѕРІР°С‚СЊ РєР°Рє СЃРѕРѕР±С‰РµРЅРёРµ РѕС‚ РєР»РёРµРЅС‚Р°
-          </label>
-          <div class="portal-actions">
-            <button type="submit" class="portal-button portal-button--primary">РћС‚РїСЂР°РІРёС‚СЊ СЃРѕРѕР±С‰РµРЅРёРµ</button>
-          </div>
-        </form>
       </div>
     </div>
   </section>
 </section>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+  (function () {
+    const form = document.querySelector('[data-admin-client-form]');
+    if (!form) return;
+
+    const formatPhone = (value) => {
+      const digits = (value || '').replace(/\D/g, '').slice(0, 11);
+      if (!digits) return '';
+      const national = digits.startsWith('8') ? `7${digits.slice(1)}` : digits;
+      const withCode = national.startsWith('7') ? national : `7${national}`;
+      const country = '+7';
+      const p1 = withCode.slice(1, 4);
+      const p2 = withCode.slice(4, 7);
+      const p3 = withCode.slice(7, 9);
+      const p4 = withCode.slice(9, 11);
+      let out = country;
+      if (p1) out += ` (${p1}`;
+      if (p1.length === 3) out += ')';
+      if (p2) out += ` ${p2}`;
+      if (p3) out += `-${p3}`;
+      if (p4) out += `-${p4}`;
+      return out;
+    };
+
+    const formatDigitsGroup = (value, group) => {
+      const size = Number(group) || 4;
+      const digits = (value || '').replace(/\D/g, '');
+      if (!digits) return '';
+      return digits.match(new RegExp(`.{1,${size}}`, 'g')).join(' ');
+    };
+
+    const phoneInput = form.querySelector('[data-phone-mask]');
+    if (phoneInput) {
+      phoneInput.addEventListener('input', () => {
+        phoneInput.value = formatPhone(phoneInput.value);
+      });
+      phoneInput.value = formatPhone(phoneInput.value);
+    }
+
+    form.querySelectorAll('[data-digits-group]').forEach((input) => {
+      input.addEventListener('input', () => {
+        input.value = formatDigitsGroup(input.value, input.dataset.digitsGroup);
+      });
+      input.value = formatDigitsGroup(input.value, input.dataset.digitsGroup);
+    });
+
+    const typeSelect = form.querySelector('[data-admin-client-type-select]');
+    const nameLabel = form.querySelector('[data-admin-client-name-label]');
+    const sections = Array.from(form.querySelectorAll('[data-admin-client-section]'));
+
+    const syncSections = () => {
+      const value = typeSelect && typeSelect.value === 'ORGANIZATION' ? 'ORGANIZATION' : 'PERSON';
+      if (nameLabel) {
+        nameLabel.textContent = value === 'ORGANIZATION' ? 'Организация' : 'ФИО';
+      }
+      sections.forEach((section) => {
+        const active = section.dataset.adminClientSection === value;
+        section.hidden = !active;
+        section.style.display = active ? '' : 'none';
+        section.setAttribute('aria-hidden', String(!active));
+      });
+    };
+
+    if (typeSelect) {
+      typeSelect.addEventListener('change', syncSections);
+      syncSections();
+    }
+  })();
+</script>
 {% endblock %}
 

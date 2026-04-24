@@ -1,22 +1,19 @@
 {% extends "base.html" %}
 {% block title %}Канбан{% endblock %}
 {% block content %}
-{% set metrics = namespace(high_risk=0, urgent=0, my_cases=0, unassigned=0) %}
+{% set metrics = namespace(urgent=0, my_cases=0, unassigned=0) %}
 {% set total_cases = namespace(count=0) %}
 {% for stage in stages %}
   {% for legal_case in grouped[stage] %}
     {% set total_cases.count = total_cases.count + 1 %}
   {% set insight = case_insights.get(legal_case.id, {}) %}
-  {% if insight.get('risk_level') == 'high' %}
-    {% set metrics.high_risk = metrics.high_risk + 1 %}
-  {% endif %}
   {% if insight.get('deadline_days') is not none and insight.get('deadline_days') <= 7 and legal_case.stage.value != 'COMPLETED' %}
     {% set metrics.urgent = metrics.urgent + 1 %}
   {% endif %}
-  {% if user.role.value == 'LAWYER' or (legal_case.responsible_lawyer_id and legal_case.responsible_lawyer_id == user.id) %}
+  {% if user.role.value == 'LAWYER' or (user.id|string in insight.get('team_ids', [])) %}
     {% set metrics.my_cases = metrics.my_cases + 1 %}
   {% endif %}
-  {% if not legal_case.responsible_lawyer_id %}
+  {% if not legal_case.responsible_lawyer_id and not legal_case.lawyers %}
     {% set metrics.unassigned = metrics.unassigned + 1 %}
   {% endif %}
   {% endfor %}
@@ -28,7 +25,7 @@
       <div class="portal-page__eyebrow">Kanban workspace</div>
       <h1 class="portal-page__title">Канбан юридических дел</h1>
       <p class="portal-page__intro">
-        Легкая визуально, но плотная по данным канбан-доска для ежедневной операционной работы: приоритеты, сроки, клиент, ответственный юрист, умная подсказка и быстрый переход в карточку дела.
+        Легкая визуально, но плотная по данным канбан-доска для ежедневной операционной работы: приоритеты, сроки, клиент, команда юристов, умная подсказка и быстрый переход в карточку дела.
       </p>
     </div>
     <div class="portal-actions">
@@ -44,65 +41,16 @@
       <div class="ops-kpi-card__icon ops-kpi-card__icon--navy"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-columns"></use></svg></div>
       <div class="ops-kpi-card__content"><span>Всего на доске</span><strong>{{ total_cases.count }}</strong><small>Все дела в текущем канбане</small></div>
     </article>
+    {% if user.role.value == 'LAWYER' %}
     <article class="ops-kpi-card">
       <div class="ops-kpi-card__icon ops-kpi-card__icon--brand"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-user"></use></svg></div>
       <div class="ops-kpi-card__content"><span>Мой контур</span><strong>{{ metrics.my_cases }}</strong><small>{% if user.role.value == 'LAWYER' %}Ваш персональный канбан{% else %}Дела, закрепленные за вами{% endif %}</small></div>
     </article>
-    <article class="ops-kpi-card">
-      <div class="ops-kpi-card__icon ops-kpi-card__icon--danger"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-alert-circle"></use></svg></div>
-      <div class="ops-kpi-card__content"><span>Высокий риск</span><strong>{{ metrics.high_risk }}</strong><small>Нужны быстрые решения по срокам или нагрузке</small></div>
-    </article>
+    {% endif %}
     <article class="ops-kpi-card">
       <div class="ops-kpi-card__icon ops-kpi-card__icon--warning"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-clock-3"></use></svg></div>
-      <div class="ops-kpi-card__content"><span>Сроки до 7 дней</span><strong>{{ metrics.urgent }}</strong><small>Ближайшие дедлайны и точки перехода</small></div>
+      <div class="ops-kpi-card__content"><span>Сроки выполнения до 7 дней</span><strong>{{ metrics.urgent }}</strong><small>Ближайшие сроки выполнения и точки перехода</small></div>
     </article>
-  </div>
-
-  <div class="ops-toolbar" data-list-filter-root>
-    <div class="ops-toolbar__header">
-      <div>
-        <h2 class="ops-toolbar__title">Сценарии доски</h2>
-        <p class="ops-toolbar__subtitle">
-          {% if user.role.value == 'LAWYER' %}
-            Сейчас открыт мой канбан. Дополнительно можно отфильтровать карточки по приоритету и риску.
-          {% else %}
-            Используйте поиск, фильтр по юристам и фильтр по приоритету, чтобы быстро переключаться между общим канбаном, персональными контурами и приоритетными очередями.
-          {% endif %}
-        </p>
-      </div>
-      <div class="ops-tag-list">
-        <span class="workspace-signal">Общий канбан</span>
-        <span class="workspace-signal">Мой канбан</span>
-        <span class="workspace-signal">По юристам</span>
-        <span class="workspace-signal">По приоритету</span>
-      </div>
-    </div>
-    <div class="ops-toolbar__body">
-      <label class="ops-search">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-search"></use></svg>
-        <input class="portal-control" type="search" placeholder="Поиск по номеру, теме, клиенту, категории, юристу" data-filter-search />
-      </label>
-      {% if user.role.value != 'LAWYER' %}
-      <select class="portal-control ops-filter-select" data-filter-select="lawyer">
-        <option value="">Все юристы</option>
-        {% for lawyer in lawyers %}
-        <option value="{{ lawyer.id }}">{{ lawyer.full_name or lawyer.username }}</option>
-        {% endfor %}
-      </select>
-      {% endif %}
-      <select class="portal-control ops-filter-select" data-filter-select="priority">
-        <option value="">Любой приоритет</option>
-        <option value="LOW">Низкий</option>
-        <option value="MEDIUM">Средний</option>
-        <option value="HIGH">Высокий</option>
-      </select>
-      <select class="portal-control ops-filter-select" data-filter-select="risk">
-        <option value="">Любой риск</option>
-        <option value="low">Под контролем</option>
-        <option value="medium">Нужен контроль</option>
-        <option value="high">Высокий риск</option>
-      </select>
-    </div>
   </div>
 
   <div class="kanban" data-kanban-board>
@@ -129,10 +77,9 @@
         draggable="true"
         data-case-card
         data-filter-item
-        data-search="{{ legal_case.case_number }} {{ legal_case.title }} {{ legal_case.client.name if legal_case.client else '' }} {{ legal_case.category }} {{ insight.get('responsible_name', '') }}"
-        data-lawyer="{{ legal_case.responsible_lawyer_id or '' }}"
+        data-search="{{ legal_case.case_number }} {{ legal_case.title }} {{ legal_case.client.name if legal_case.client else '' }} {{ legal_case.category }} {{ insight.get('team_label', insight.get('responsible_name', '')) }}"
+        data-lawyer="{{ insight.get('team_filter', legal_case.responsible_lawyer_id or '') }}"
         data-priority="{{ legal_case.priority or 'MEDIUM' }}"
-        data-risk="{{ insight.get('risk_level', 'low') }}"
         data-current-stage="{{ legal_case.stage.value }}"
       >
         <div class="case-card__header">
@@ -149,32 +96,28 @@
           {% if insight.get('suggestion') %}
             {{ insight.get('suggestion').lawyer_name }} • {{ insight.get('suggestion').summary }}
           {% else %}
-            {{ legal_case.description[:150] }}{% if legal_case.description and legal_case.description|length > 150 %}...{% endif %}
+            {{ legal_case.description or 'Описание дела пока не заполнено.' }}
           {% endif %}
         </p>
 
         <dl class="case-card__meta">
           <div class="case-card__meta-row">
-            <dt>Ответственный</dt>
+            <dt>Команда</dt>
             <dd>
-              {{ insight.get('responsible_name', 'Не назначен') }}
+              {{ insight.get('team_label', 'Не назначены') }}
               {% if insight.get('responsible_specialization') %}
-              • {{ insight.get('responsible_specialization') }}
+              • отв.: {{ insight.get('responsible_name', 'Не назначен') }}
               {% endif %}
             </dd>
           </div>
           <div class="case-card__meta-row">
-            <dt>Дедлайн</dt>
+            <dt>Срок выполнения</dt>
             <dd class="{% if deadline_level %}case-card__deadline case-card__deadline--{{ deadline_level }}{% endif %}">
-              {{ legal_case.deadline.strftime('%d.%m.%Y') if legal_case.deadline else 'Без дедлайна' }}
+              {{ legal_case.deadline.strftime('%d.%m.%Y') if legal_case.deadline else 'Без срока выполнения' }}
             </dd>
           </div>
           <div class="case-card__meta-row">
-            <dt>Риск</dt>
-            <dd><span class="ops-risk ops-risk--{{ insight.get('risk_level', 'low') }}">{{ insight.get('risk_label', 'Под контролем') }}</span></dd>
-          </div>
-          <div class="case-card__meta-row">
-            <dt>Клиентских действий</dt>
+            <dt>Действия клиента</dt>
             <dd>{{ insight.get('last_client_action_text', 'Нет новых действий клиента') }}</dd>
           </div>
         </dl>

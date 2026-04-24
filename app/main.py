@@ -1,6 +1,6 @@
 ﻿from __future__ import annotations
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta, timezone
 import html
 import io
@@ -8,6 +8,7 @@ import mimetypes
 from pathlib import Path
 import secrets
 import re
+import string
 import zipfile
 from urllib.parse import quote
 
@@ -15,7 +16,7 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Upload
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -36,10 +37,11 @@ from .models import (
     Role,
     TaskStatus,
     User,
+    case_lawyers,
 )
 from .security import hash_password, verify_password
 from .seed import create_schema, seed_data
-from .topsis import topsis_rank
+from .topsis import get_default_topsis_settings, load_topsis_settings, save_topsis_settings, topsis_rank
 
 
 app = FastAPI(title=settings.app_name, debug=settings.debug)
@@ -49,6 +51,8 @@ app.mount("/site2static", StaticFiles(directory="app/site2"), name="site2static"
 templates = Jinja2Templates(directory="app/templates")
 SITE2_DIR = Path("app/site2")
 UPLOADS_DIR = Path("app/uploads")
+DATA_DIR = Path("app/data")
+DATA_DIR.mkdir(parents=True, exist_ok=True)
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -63,7 +67,7 @@ async def disable_cache_in_debug(request: Request, call_next):
 
 
 STAGE_LABELS = {
-    CaseStage.NEW_REQUEST: "Заявка принята",
+    CaseStage.NEW_REQUEST: "Дело открыто",
     CaseStage.DOC_ANALYSIS: "Анализ документов",
     CaseStage.DOC_PREPARATION: "Подготовка позиции",
     CaseStage.COURT: "Процессуальные действия",
@@ -94,12 +98,13 @@ INTAKE_STATUS_LABELS = {
     "PENDING_REVIEW": "На проверке",
     "NEEDS_CLARIFICATION": "Нужно уточнение",
     "CLOSED": "Закрыто администратором",
+    "WITHDRAWN": "Отозвано клиентом",
     "APPROVED": "Принято в работу",
 }
 
 PREFERRED_CONTACT_METHOD_LABELS = {
     "CHAT": "Чат в кабинете",
-    "EMAIL": "Email",
+    "EMAIL": "Электронная почта",
     "PHONE": "Телефон",
 }
 
@@ -126,7 +131,7 @@ def require_auth(request: Request, db: Session) -> User:
 
 
 def require_admin(request: Request, db: Session) -> User:
-    user = require_auth(request, db)
+    user = require_staff(request, db)
     if user.role != Role.ADMIN:
         raise HTTPException(status_code=403, detail="Недостаточно прав")
     return user
@@ -197,6 +202,18 @@ def generate_unique_username(db: Session, email: str) -> str:
     return candidate
 
 
+def generate_secure_password(length: int = 12) -> str:
+    alphabet = string.ascii_letters + string.digits
+    while True:
+        password = "".join(secrets.choice(alphabet) for _ in range(max(length, 12)))
+        if (
+            re.search(r"[A-Z]", password)
+            and re.search(r"[a-z]", password)
+            and re.search(r"\d", password)
+        ):
+            return password
+
+
 def parse_iso_date(value: str) -> date | None:
     cleaned = (value or "").strip()
     if not cleaned:
@@ -219,6 +236,122 @@ def case_status_label(legal_case: LegalCase) -> str:
     if intake_status != "APPROVED":
         return INTAKE_STATUS_LABELS[intake_status]
     return STAGE_LABELS[legal_case.stage]
+
+
+def case_visible_in_staff_cabinet(legal_case: LegalCase) -> bool:
+    intake_status = normalize_intake_status(legal_case.intake_status, legal_case.intake_approved)
+    return legal_case.intake_approved or intake_status == "PENDING_REVIEW"
+
+
+def case_visible_in_client_chat(legal_case: LegalCase) -> bool:
+    intake_status = normalize_intake_status(legal_case.intake_status, legal_case.intake_approved)
+    return intake_status not in {"CLOSED", "WITHDRAWN"}
+
+
+def case_assignment_condition(lawyer_id: int):
+    return or_(
+        LegalCase.responsible_lawyer_id == lawyer_id,
+        LegalCase.lawyers.any(User.id == lawyer_id),
+    )
+
+
+def case_team_members(legal_case: LegalCase) -> list[User]:
+    team: list[User] = []
+    seen_ids: set[int] = set()
+
+    if legal_case.responsible_lawyer and legal_case.responsible_lawyer.id not in seen_ids:
+        team.append(legal_case.responsible_lawyer)
+        seen_ids.add(legal_case.responsible_lawyer.id)
+
+    for lawyer in legal_case.lawyers:
+        if lawyer.id in seen_ids:
+            continue
+        team.append(lawyer)
+        seen_ids.add(lawyer.id)
+
+    return team
+
+
+def case_team_member_ids(legal_case: LegalCase) -> set[int]:
+    return {lawyer.id for lawyer in case_team_members(legal_case)}
+
+
+def case_team_display(legal_case: LegalCase) -> str:
+    names = [lawyer.full_name or lawyer.username for lawyer in case_team_members(legal_case)]
+    return ", ".join(names) if names else "Не назначены"
+
+
+def lawyer_assigned_to_case(legal_case: LegalCase, lawyer_id: int) -> bool:
+    return any(lawyer.id == lawyer_id for lawyer in case_team_members(legal_case))
+
+
+def user_can_access_case(user: User, legal_case: LegalCase) -> bool:
+    if user.role != Role.LAWYER:
+        return True
+    return lawyer_assigned_to_case(legal_case, user.id)
+
+
+def ensure_staff_case_access(user: User, legal_case: LegalCase, detail: str = "Нет доступа к делу") -> None:
+    if not user_can_access_case(user, legal_case):
+        raise HTTPException(status_code=403, detail=detail)
+
+
+def resolve_case_team_lawyers(
+    db: Session,
+    raw_team_lawyer_ids: list[str] | None,
+    responsible_lawyer_id: int | None,
+    category: str,
+    title: str,
+    description: str,
+    enforce_specialization: bool = True,
+) -> tuple[list[User], str | None]:
+    selected_ids: list[int] = []
+    seen_ids: set[int] = set()
+
+    if responsible_lawyer_id:
+        selected_ids.append(responsible_lawyer_id)
+        seen_ids.add(responsible_lawyer_id)
+
+    for raw_value in raw_team_lawyer_ids or []:
+        cleaned = (raw_value or "").strip()
+        if not cleaned:
+            continue
+        if not cleaned.isdigit():
+            return [], "lawyer"
+        lawyer_id = int(cleaned)
+        if lawyer_id in seen_ids:
+            continue
+        selected_ids.append(lawyer_id)
+        seen_ids.add(lawyer_id)
+
+    team_lawyers: list[User] = []
+    for lawyer_id in selected_ids:
+        lawyer = db.get(User, lawyer_id)
+        if not lawyer or lawyer.role != Role.LAWYER:
+            return [], "lawyer"
+        if enforce_specialization and not lawyer_matches_case_specialization(
+            lawyer,
+            category,
+            title,
+            description or "",
+        ):
+            return [], "lawyer_specialization"
+        team_lawyers.append(lawyer)
+
+    return team_lawyers, None
+
+
+def notify_case_team(
+    db: Session,
+    legal_case: LegalCase,
+    title: str,
+    message: str,
+    exclude_user_id: int | None = None,
+) -> None:
+    for lawyer in case_team_members(legal_case):
+        if exclude_user_id is not None and lawyer.id == exclude_user_id:
+            continue
+        db.add(Notification(recipient_id=lawyer.id, title=title, message=message))
 
 
 def next_case_number(db: Session) -> str:
@@ -301,55 +434,6 @@ def build_case_workspace(db: Session, legal_case: LegalCase) -> dict:
     if legal_case.deadline:
         deadline_days = (legal_case.deadline - today).days
 
-    risk_items = []
-    risk_score = 0
-
-    if legal_case.stage != CaseStage.COMPLETED:
-        if legal_case.responsible_lawyer_id is None:
-            risk_items.append(("high", "Не назначен ответственный юрист"))
-            risk_score += 3
-        if legal_case.deadline is None:
-            risk_items.append(("medium", "У дела нет установленного дедлайна"))
-            risk_score += 2
-        elif deadline_days is not None and deadline_days < 0:
-            risk_items.append(("high", "Дедлайн уже просрочен"))
-            risk_score += 4
-        elif deadline_days is not None and deadline_days <= 3:
-            risk_items.append(("high", "До дедлайна осталось 1-3 дня"))
-            risk_score += 3
-        elif deadline_days is not None and deadline_days <= 7:
-            risk_items.append(("medium", "До дедлайна осталось меньше недели"))
-            risk_score += 2
-
-    if not legal_case.description or len(legal_case.description.strip()) < 80:
-        risk_items.append(("medium", "Описание дела слишком краткое для уверенной передачи в работу"))
-        risk_score += 1
-
-    if not tasks:
-        risk_items.append(("medium", "По делу еще не создано ни одной задачи"))
-        risk_score += 2
-    elif overdue_tasks:
-        severity = "high" if len(overdue_tasks) >= 2 else "medium"
-        risk_items.append((severity, f"Есть просроченные задачи: {len(overdue_tasks)}"))
-        risk_score += 3 if severity == "high" else 2
-
-    if legal_case.responsible_lawyer and legal_case.responsible_lawyer.current_load >= 6:
-        risk_items.append(("medium", "Ответственный юрист уже сильно загружен"))
-        risk_score += 1
-
-    if risk_score >= 6:
-        risk_level = "high"
-        risk_label = "Высокий риск"
-    elif risk_score >= 3:
-        risk_level = "medium"
-        risk_label = "Средний риск"
-    else:
-        risk_level = "low"
-        risk_label = "Низкий риск"
-
-    if not risk_items:
-        risk_items.append(("low", "Критичных рисков по делу сейчас не обнаружено"))
-
     stage_steps = {
         CaseStage.NEW_REQUEST: [
             "Проверить комплект входящих документов и уточнить запрос клиента",
@@ -374,7 +458,7 @@ def build_case_workspace(db: Session, legal_case: LegalCase) -> dict:
     }
     next_steps = list(stage_steps.get(legal_case.stage, []))
     if deadline_days is not None and 0 <= deadline_days <= 7:
-        next_steps.insert(0, "Поставить дело в приоритет и перепроверить ближайшие дедлайны")
+        next_steps.insert(0, "Поставить дело в приоритет и перепроверить ближайшие сроки выполнения")
     if not active_tasks and legal_case.stage != CaseStage.COMPLETED:
         next_steps.append("Добавить рабочие задачи, чтобы команда видела следующий шаг")
 
@@ -409,11 +493,6 @@ def build_case_workspace(db: Session, legal_case: LegalCase) -> dict:
         )
 
     return {
-        "risk": {
-            "level": risk_level,
-            "label": risk_label,
-            "items": [{"level": level, "text": text} for level, text in risk_items],
-        },
         "ai": {
             "summary": ai_summary,
             "predicted_category": category_text,
@@ -429,12 +508,17 @@ def build_case_workspace(db: Session, legal_case: LegalCase) -> dict:
     }
 
 
-def build_client_chat_payload(db: Session, client: Client) -> dict:
+def build_client_chat_payload(db: Session, client: Client, viewer: User | None = None) -> dict:
     client_cases = db.scalars(
         select(LegalCase).where(LegalCase.client_id == client.id).order_by(LegalCase.opened_at.desc(), LegalCase.id.desc())
     ).all()
-    case_ids = [item.id for item in client_cases]
-    case_map = {item.id: item for item in client_cases}
+    viewer_is_staff = bool(viewer and viewer.role in {Role.ADMIN, Role.LAWYER})
+    visible_cases = [item for item in client_cases if not viewer_is_staff or case_visible_in_staff_cabinet(item)]
+    if viewer and viewer.role == Role.LAWYER:
+        visible_cases = [item for item in visible_cases if item.intake_approved and lawyer_assigned_to_case(item, viewer.id)]
+    visible_cases = [item for item in visible_cases if case_visible_in_client_chat(item)]
+    case_ids = [item.id for item in visible_cases]
+    case_map = {item.id: item for item in visible_cases}
 
     client_tasks: list[CaseTask] = []
     client_invoices: list[Invoice] = []
@@ -451,19 +535,29 @@ def build_client_chat_payload(db: Session, client: Client) -> dict:
             .where(CaseDocument.legal_case_id.in_(case_ids))
             .order_by(CaseDocument.created_at.desc(), CaseDocument.id.desc())
         ).all()
+    documents_by_case: dict[int, list[CaseDocument]] = defaultdict(list)
+    for document in client_documents:
+        documents_by_case[document.legal_case_id].append(document)
 
     today = date.today()
-    active_cases = [item for item in client_cases if item.stage != CaseStage.COMPLETED]
+    active_cases = [item for item in visible_cases if item.stage != CaseStage.COMPLETED]
     active_tasks = [item for item in client_tasks if item.status != TaskStatus.DONE]
     overdue_tasks = [item for item in client_tasks if item.status != TaskStatus.DONE and item.due_date < today]
     unpaid_invoices = [item for item in client_invoices if (item.status or "").upper() != "PAID"]
 
-    messages = db.scalars(
+    message_stmt = (
         select(ClientChatMessage)
         .where(ClientChatMessage.client_id == client.id)
         .order_by(ClientChatMessage.created_at, ClientChatMessage.id)
-    ).all()
+    )
+    if viewer and viewer.role == Role.LAWYER:
+        if case_ids:
+            message_stmt = message_stmt.where(ClientChatMessage.legal_case_id.in_(case_ids))
+        else:
+            message_stmt = message_stmt.where(ClientChatMessage.id == -1)
+    messages = db.scalars(message_stmt).all()
     users_map = {item.id: item for item in db.scalars(select(User)).all()}
+    lawyers = [item for item in users_map.values() if item.role == Role.LAWYER]
 
     payload_messages = []
     for item in messages:
@@ -479,16 +573,119 @@ def build_client_chat_payload(db: Session, client: Client) -> dict:
             }
         )
 
+    show_problem_details = len(visible_cases) <= 1
     latest_problem = ""
-    for item in client_cases:
-        description = (item.description or "").strip()
-        if description:
-            latest_problem = description
-            break
-    if not latest_problem:
-        latest_problem = (client.notes or "").strip()
+    if show_problem_details:
+        for item in visible_cases:
+            description = (item.description or "").strip()
+            if description:
+                latest_problem = description
+                break
+        if not latest_problem:
+            latest_problem = (client.notes or "").strip()
+
+    intake_requests = []
+    for item in visible_cases:
+        intake_status = normalize_intake_status(item.intake_status, item.intake_approved)
+        recommendations = []
+        eligible_lawyers = []
+        if not item.intake_approved and intake_status == "PENDING_REVIEW":
+            eligible_lawyers = filter_lawyers_by_specialization(
+                lawyers,
+                item.category or "",
+                item.title,
+                item.description or "",
+            )
+            recommendations = topsis_rank(item.category or item.title, eligible_lawyers)[:3]
+
+        intake_requests.append(
+            {
+                "id": item.id,
+                "case_number": item.case_number,
+                "title": item.title,
+                "category": item.category or "Не указана",
+                "description": item.description or "",
+                "opened_at": item.opened_at.strftime("%d.%m.%Y"),
+                "stage": item.stage.value,
+                "stage_label": STAGE_LABELS[item.stage],
+                "priority": (item.priority or "MEDIUM").upper(),
+                "priority_label": priority_label(item.priority),
+                "intake_status": intake_status,
+                "intake_status_label": INTAKE_STATUS_LABELS[intake_status],
+                "status_label": case_status_label(item),
+                "is_consultation": bool(item.is_consultation),
+                "intake_approved": bool(item.intake_approved),
+                "preferred_contact_method": (item.preferred_contact_method or "CHAT").upper(),
+                "preferred_contact_method_label": PREFERRED_CONTACT_METHOD_LABELS.get(
+                    (item.preferred_contact_method or "CHAT").upper(),
+                    "Чат в кабинете",
+                ),
+                "allow_phone_contact": bool(item.allow_phone_contact),
+                "admin_comment": (item.intake_admin_comment or "").strip(),
+                "responsible_lawyer_name": (
+                    (item.responsible_lawyer.full_name or item.responsible_lawyer.username)
+                    if item.responsible_lawyer
+                    else "Не назначен"
+                ),
+                "responsible_lawyer_specialization": (
+                    (item.responsible_lawyer.specialization or "").strip()
+                    if item.responsible_lawyer
+                    else ""
+                ),
+                "team_lawyer_names": case_team_display(item),
+                "team_lawyer_ids": [lawyer.id for lawyer in case_team_members(item)],
+                "assigned_lawyers": [
+                    {
+                        "id": lawyer.id,
+                        "full_name": lawyer.full_name or lawyer.username,
+                        "specialization": (lawyer.specialization or "").strip(),
+                        "is_responsible": bool(item.responsible_lawyer_id == lawyer.id),
+                    }
+                    for lawyer in case_team_members(item)
+                ],
+                "documents": [
+                    {
+                        "id": document.id,
+                        "name": document.original_filename,
+                        "description": document.description or "",
+                        "created_at": (_to_local_naive(document.created_at) or document.created_at).strftime("%d.%m.%Y %H:%M"),
+                    }
+                    for document in documents_by_case.get(item.id, [])
+                ],
+                "all_lawyers": [
+                    {
+                        "id": lawyer.id,
+                        "full_name": lawyer.full_name or lawyer.username,
+                        "specialization": (lawyer.specialization or "").strip(),
+                    }
+                    for lawyer in lawyers
+                ],
+                "eligible_lawyers": [
+                    {
+                        "id": lawyer.id,
+                        "full_name": lawyer.full_name or lawyer.username,
+                        "specialization": (lawyer.specialization or "").strip(),
+                    }
+                    for lawyer in eligible_lawyers
+                ],
+                "recommendations": [
+                    {
+                        "id": recommendation.user.id,
+                        "full_name": recommendation.user.full_name or recommendation.user.username,
+                        "specialization": (recommendation.user.specialization or "").strip(),
+                        "score": recommendation.score,
+                        "score_label": f"{recommendation.score:.4f}".replace(".", ","),
+                    }
+                    for recommendation in recommendations
+                ],
+            }
+        )
 
     return {
+        "viewer": {
+            "id": viewer.id if viewer else None,
+            "role": viewer.role.value if viewer else "",
+        },
         "client": {
             "id": client.id,
             "name": client.name,
@@ -497,8 +694,9 @@ def build_client_chat_payload(db: Session, client: Client) -> dict:
             "email": client.email,
             "phone": client.phone,
             "address": client.address,
-            "notes": client.notes,
+            "notes": client.notes if show_problem_details else "",
             "problem_summary": latest_problem,
+            "show_problem_details": show_problem_details,
             "passport_details": (client.passport_details or "").strip(),
             "organization_requisites": "\n".join(
                 part
@@ -512,7 +710,7 @@ def build_client_chat_payload(db: Session, client: Client) -> dict:
             ),
         },
         "overview": {
-            "cases_total": len(client_cases),
+            "cases_total": len(visible_cases),
             "cases_active": len(active_cases),
             "tasks_active": len(active_tasks),
             "tasks_overdue": len(overdue_tasks),
@@ -535,7 +733,7 @@ def build_client_chat_payload(db: Session, client: Client) -> dict:
                     "is_consultation": bool(item.is_consultation),
                     "intake_status": normalize_intake_status(item.intake_status, item.intake_approved),
                     "status_label": case_status_label(item),
-                    "deadline": item.deadline.strftime("%d.%m.%Y") if item.deadline else "Без дедлайна",
+                    "deadline": item.deadline.strftime("%d.%m.%Y") if item.deadline else "Без срока выполнения",
                     "deadline_input": item.deadline.isoformat() if item.deadline else "",
                     "responsible_lawyer_id": item.responsible_lawyer_id or "",
                     "responsible_lawyer_name": (
@@ -548,8 +746,10 @@ def build_client_chat_payload(db: Session, client: Client) -> dict:
                         if item.responsible_lawyer
                         else ""
                     ),
+                    "team_lawyer_names": case_team_display(item),
+                    "team_lawyer_ids": [lawyer.id for lawyer in case_team_members(item)],
                 }
-                for item in client_cases[:5]
+                for item in visible_cases[:5]
             ],
             "upcoming_tasks": [
                 {
@@ -584,8 +784,8 @@ def build_client_chat_payload(db: Session, client: Client) -> dict:
                     "id": item.id,
                     "label": f"{item.case_number} — {item.title}" + (" (консультация)" if item.is_consultation else ""),
                 }
-                for item in client_cases
-                if not item.is_consultation
+                for item in visible_cases
+                if item.intake_approved and not item.is_consultation
             ],
             "cases": [
                 {
@@ -599,7 +799,7 @@ def build_client_chat_payload(db: Session, client: Client) -> dict:
                         (item.priority or "MEDIUM").upper(),
                         (item.priority or "MEDIUM").upper(),
                     ),
-                    "deadline": item.deadline.strftime("%d.%m.%Y") if item.deadline else "Без дедлайна",
+                    "deadline": item.deadline.strftime("%d.%m.%Y") if item.deadline else "Без срока выполнения",
                     "deadline_input": item.deadline.isoformat() if item.deadline else "",
                     "responsible_lawyer_id": item.responsible_lawyer_id or "",
                     "responsible_lawyer_name": (
@@ -612,10 +812,13 @@ def build_client_chat_payload(db: Session, client: Client) -> dict:
                         if item.responsible_lawyer
                         else ""
                     ),
+                    "team_lawyer_names": case_team_display(item),
+                    "team_lawyer_ids": [lawyer.id for lawyer in case_team_members(item)],
                     "is_consultation": bool(item.is_consultation),
                 }
-                for item in client_cases
+                for item in visible_cases
             ],
+            "intake_requests": intake_requests,
             "return_to": f"/clients?chat_client_id={client.id}",
         },
         "messages": payload_messages,
@@ -624,7 +827,7 @@ def build_client_chat_payload(db: Session, client: Client) -> dict:
 
 def case_stage_progress(legal_case: LegalCase) -> list[dict]:
     steps = [
-        (CaseStage.NEW_REQUEST, "Заявка принята"),
+        (CaseStage.NEW_REQUEST, "Дело открыто"),
         (CaseStage.DOC_ANALYSIS, "Анализ документов"),
         (CaseStage.DOC_PREPARATION, "Подготовка позиции"),
         (CaseStage.COURT, "Процессуальные действия"),
@@ -677,11 +880,16 @@ def build_case_message_payload(
         .where(ClientChatMessage.legal_case_id == legal_case.id)
         .order_by(ClientChatMessage.created_at.asc(), ClientChatMessage.id.asc())
     ).all()
+    users_map = {item.id: item for item in db.scalars(select(User)).all()}
     payload = []
     for item in raw_messages:
         author = client.name if item.is_from_client else "Юрист"
-        if not item.is_from_client and lawyer and item.user_id == lawyer.id:
-            author = lawyer.full_name or lawyer.username
+        if not item.is_from_client and item.user_id:
+            author_user = users_map.get(item.user_id)
+            if author_user:
+                author = author_user.full_name or author_user.username
+            elif lawyer and item.user_id == lawyer.id:
+                author = lawyer.full_name or lawyer.username
         created_local = _to_local_naive(item.created_at) or item.created_at
         payload.append(
             {
@@ -699,6 +907,8 @@ def build_case_chat_list(db: Session, client: Client, cases: list[LegalCase]) ->
     users_map = {item.id: item for item in db.scalars(select(User)).all()}
     payload = []
     for legal_case in cases:
+        if not case_visible_in_client_chat(legal_case):
+            continue
         messages = db.scalars(
             select(ClientChatMessage)
             .where(ClientChatMessage.client_id == client.id)
@@ -791,15 +1001,6 @@ def build_client_case_detail(db: Session, client: Client, legal_case: LegalCase)
     required_docs: list[str] = []
     requires_client_action = bool(client_tasks)
     stage_label = STAGE_LABELS[legal_case.stage]
-    risk_level = "normal"
-    risk_text = "Сроки под контролем"
-    if overdue_tasks:
-        risk_level = "high"
-        risk_text = "Есть риск пропуска срока"
-    elif legal_case.deadline and (legal_case.deadline - today).days <= 3:
-        risk_level = "medium"
-        risk_text = "Ближайший срок наступает скоро"
-
     status_summary_map = {
         CaseStage.NEW_REQUEST: (
             "Ваше обращение зарегистрировано и ожидает первичной проверки.",
@@ -808,7 +1009,7 @@ def build_client_case_detail(db: Session, client: Client, legal_case: LegalCase)
         ),
         CaseStage.DOC_ANALYSIS: (
             "Юрист анализирует материалы и формирует правовую позицию.",
-            "Сейчас команда изучает документы и выделяет ключевые риски.",
+            "Сейчас команда изучает документы и выделяет ключевые обстоятельства по делу.",
             "После анализа мы обозначим план действий и контрольные даты.",
         ),
         CaseStage.DOC_PREPARATION: (
@@ -833,9 +1034,23 @@ def build_client_case_detail(db: Session, client: Client, legal_case: LegalCase)
     )
 
     if not legal_case.intake_approved:
-        current_state = "Обращение принято системой и ожидает первичной проверки."
-        lawyer_next_step = "Администратор проверит заявку и назначит ответственного юриста."
-        nearest_stage = "После проверки вы увидите переход к этапу анализа документов."
+        intake_status = normalize_intake_status(legal_case.intake_status, legal_case.intake_approved)
+        if intake_status == "NEEDS_CLARIFICATION":
+            current_state = "Обращение возвращено на доработку и ожидает ваших уточнений."
+            lawyer_next_step = "После повторной отправки администратор снова проверит заявку."
+            nearest_stage = "Исправьте данные обращения и отправьте его на повторную проверку."
+        elif intake_status == "CLOSED":
+            current_state = "Обращение закрыто администратором и не передано в работу."
+            lawyer_next_step = "Текущее обращение завершено без назначения юриста."
+            nearest_stage = "При необходимости вы можете создать новое обращение по этому вопросу."
+        elif intake_status == "WITHDRAWN":
+            current_state = "Вы отозвали обращение до рассмотрения администратором."
+            lawyer_next_step = "Это обращение больше не участвует в распределении по юристам."
+            nearest_stage = "При необходимости можно подать новое обращение с актуальными данными."
+        else:
+            current_state = "Обращение принято системой и ожидает первичной проверки."
+            lawyer_next_step = "Администратор проверит заявку и назначит юридическую команду."
+            nearest_stage = "После проверки вы увидите переход к этапу анализа документов."
 
     if client_tasks:
         client_expectation = client_tasks[0].title
@@ -931,15 +1146,6 @@ def build_client_case_detail(db: Session, client: Client, legal_case: LegalCase)
                 "actor": item["uploader_name"],
             }
         )
-    for item in messages[-6:]:
-        changes.append(
-            {
-                "date": item["created_at"],
-                "title": "Обновлена коммуникация",
-                "description": item["message"][:100],
-                "actor": item["author"],
-            }
-        )
     changes.sort(key=lambda item: item["date"], reverse=True)
 
     participants = [
@@ -957,6 +1163,17 @@ def build_client_case_detail(db: Session, client: Client, legal_case: LegalCase)
                 "role": "Ответственный юрист",
                 "meta": assigned_lawyer.email or assigned_lawyer.specialization or "Юридическая команда",
                 "initials": (assigned_lawyer.full_name or assigned_lawyer.username or "Ю").strip()[:1],
+            }
+        )
+    for lawyer in legal_case.lawyers:
+        if assigned_lawyer and lawyer.id == assigned_lawyer.id:
+            continue
+        participants.append(
+            {
+                "name": lawyer.full_name or lawyer.username,
+                "role": "Юрист по делу",
+                "meta": lawyer.email or lawyer.specialization or "Юридическая команда",
+                "initials": (lawyer.full_name or lawyer.username or "Ю").strip()[:1],
             }
         )
 
@@ -1021,8 +1238,6 @@ def build_client_case_detail(db: Session, client: Client, legal_case: LegalCase)
             "lawyer_next_step": lawyer_next_step,
             "client_expectation": client_expectation,
             "nearest_stage": nearest_stage,
-            "risk_level": risk_level,
-            "risk_text": risk_text,
             "requires_client_action": requires_client_action,
             "next_milestone_date": next_milestone_date,
         },
@@ -1072,6 +1287,25 @@ def notification_is_critical(notification: Notification) -> bool:
         "high",
     ]
     return any(marker in text for marker in critical_markers)
+
+
+def audit_log_is_case_related(entry: AuditLog) -> bool:
+    text = f"{entry.action} {entry.details}".lower()
+    markers = [
+        "дел",
+        "case-",
+        "обращен",
+        "документ",
+        "задач",
+        "комментар",
+        "событи",
+        "стад",
+        "клиент подал",
+        "клиент отозвал",
+        "клиент обновил",
+        "клиент дополнил",
+    ]
+    return any(marker in text for marker in markers)
 
 
 def is_finance_related_text(text: str) -> bool:
@@ -1143,15 +1377,6 @@ def build_case_insights(db: Session, cases: list[LegalCase], lawyers: list[User]
         last_client_document = max(client_docs, key=lambda item: item.created_at) if client_docs else None
         deadline_days = (legal_case.deadline - today).days if legal_case.deadline else None
 
-        risk_level = "low"
-        risk_label = "Под контролем"
-        if overdue_tasks or (deadline_days is not None and deadline_days < 0):
-            risk_level = "high"
-            risk_label = "Высокий риск"
-        elif (deadline_days is not None and deadline_days <= 3) or len(overdue_tasks) == 1:
-            risk_level = "medium"
-            risk_label = "Нужен контроль"
-
         suggestion = None
         eligible_lawyers = filter_lawyers_by_specialization(
             lawyer_pool,
@@ -1183,14 +1408,15 @@ def build_case_insights(db: Session, cases: list[LegalCase], lawyers: list[User]
             (item for item in sorted(case_events, key=lambda event: event.starts_at) if (item.event_type or "CUSTOM").upper() == "COURT"),
             None,
         )
+        team_lawyers = case_team_members(legal_case)
+        team_names = [lawyer.full_name or lawyer.username for lawyer in team_lawyers]
+        team_ids = [str(lawyer.id) for lawyer in team_lawyers]
 
         payload[legal_case.id] = {
             "open_tasks": len(open_tasks),
             "overdue_tasks": len(overdue_tasks),
             "documents_count": len(case_docs),
             "messages_count": len(case_messages),
-            "risk_level": risk_level,
-            "risk_label": risk_label,
             "deadline_days": deadline_days,
             "next_task": next_task,
             "next_event": next_event,
@@ -1211,6 +1437,10 @@ def build_case_insights(db: Session, cases: list[LegalCase], lawyers: list[User]
                 if legal_case.responsible_lawyer
                 else ""
             ),
+            "team_names": team_names,
+            "team_label": ", ".join(team_names) if team_names else "Не назначены",
+            "team_ids": team_ids,
+            "team_filter": ",".join(team_ids),
         }
 
     return payload
@@ -1245,12 +1475,17 @@ def build_staff_case_detail(db: Session, legal_case: LegalCase) -> dict:
     messages = build_case_message_payload(db, client, legal_case, assigned_lawyer) if client else []
     users_map = {item.id: item for item in db.scalars(select(User)).all()}
     lawyers = db.scalars(select(User).where(User.role == Role.LAWYER).order_by(User.full_name, User.username)).all()
+    team_lawyers = case_team_members(legal_case)
     eligible_lawyers = filter_lawyers_by_specialization(
         lawyers,
         legal_case.category or "",
         legal_case.title,
         legal_case.description or "",
     )
+    eligible_lawyers_by_id = {lawyer.id: lawyer for lawyer in eligible_lawyers}
+    for lawyer in team_lawyers:
+        eligible_lawyers_by_id.setdefault(lawyer.id, lawyer)
+    eligible_lawyers = list(eligible_lawyers_by_id.values())
     suggestions = topsis_rank(legal_case.category or legal_case.title, eligible_lawyers)[:3] if eligible_lawyers else []
 
     open_tasks = [item for item in tasks if item.status != TaskStatus.DONE]
@@ -1258,6 +1493,84 @@ def build_staff_case_detail(db: Session, legal_case: LegalCase) -> dict:
     today_tasks = [item for item in open_tasks if item.due_date == today]
     latest_documents = documents[:5]
     latest_messages = list(reversed(messages[-5:]))
+    latest_client_message = next((item for item in reversed(messages) if item["is_from_client"]), None)
+    latest_staff_message = next((item for item in reversed(messages) if not item["is_from_client"]), None)
+
+    last_activity_candidates: list[tuple[datetime, str, str]] = []
+    if latest_client_message:
+        last_activity_candidates.append(
+            (
+                latest_client_message["created_at"],
+                "Сообщение клиента",
+                latest_client_message["message"][:110],
+            )
+        )
+    if latest_staff_message:
+        last_activity_candidates.append(
+            (
+                latest_staff_message["created_at"],
+                "Ответ команды",
+                latest_staff_message["message"][:110],
+            )
+        )
+    if documents:
+        document_dt = _to_local_naive(documents[0].created_at) or documents[0].created_at
+        last_activity_candidates.append(
+            (document_dt, "Новый документ", documents[0].original_filename)
+        )
+    if comments:
+        comment_dt = _to_local_naive(comments[0].created_at) or comments[0].created_at
+        last_activity_candidates.append(
+            (comment_dt, "Комментарий по делу", comments[0].message[:110])
+        )
+
+    last_activity = None
+    if last_activity_candidates:
+        last_activity_dt, last_activity_label, last_activity_text = max(last_activity_candidates, key=lambda item: item[0])
+        last_activity = {
+            "date": last_activity_dt,
+            "label": last_activity_label,
+            "text": last_activity_text,
+        }
+
+    if latest_client_message and (not latest_staff_message or latest_staff_message["created_at"] < latest_client_message["created_at"]):
+        communication_status = {
+            "label": "Ожидает ответа",
+            "description": "Последнее сообщение оставил клиент, стоит дать следующий шаг или подтверждение.",
+        }
+    elif latest_staff_message:
+        communication_status = {
+            "label": "Активная переписка",
+            "description": "По делу уже есть рабочая коммуникация с клиентом и команда держит контакт.",
+        }
+    else:
+        communication_status = {
+            "label": "Переписка не начата",
+            "description": "Чат по делу пока пуст. Первый контакт лучше зафиксировать в карточке дела.",
+        }
+
+    next_action = {
+        "label": "Новых действий не запланировано",
+        "description": "По делу пока нет ближайших задач или событий.",
+    }
+    if overdue_tasks:
+        next_action = {
+            "label": "Разобрать просроченные задачи",
+            "description": f"Просрочено задач: {len(overdue_tasks)}. Это главный операционный приоритет по делу.",
+        }
+    elif open_tasks:
+        next_task_item = min(open_tasks, key=lambda item: item.due_date)
+        next_action = {
+            "label": next_task_item.title,
+            "description": f"Ближайшая задача до {next_task_item.due_date.strftime('%d.%m.%Y')}.",
+        }
+    elif events:
+        next_event_item = min(events, key=lambda item: item.starts_at)
+        next_event_dt = _to_local_naive(next_event_item.starts_at) or next_event_item.starts_at
+        next_action = {
+            "label": next_event_item.title,
+            "description": f"Ближайшее событие: {next_event_dt.strftime('%d.%m.%Y %H:%M')}.",
+        }
 
     document_rows = []
     for item in documents:
@@ -1367,18 +1680,6 @@ def build_staff_case_detail(db: Session, legal_case: LegalCase) -> dict:
             }
         )
 
-    for item in messages[-10:]:
-        timeline.append(
-            {
-                "date": item["created_at"],
-                "type": "Коммуникация",
-                "title": "Новое сообщение",
-                "description": item["message"][:120],
-                "actor": item["author"],
-                "status": "Чат",
-            }
-        )
-
     for item in comments[:10]:
         author = users_map.get(item.user_id) if item.user_id else None
         created_local = _to_local_naive(item.created_at) or item.created_at
@@ -1452,11 +1753,13 @@ def build_staff_case_detail(db: Session, legal_case: LegalCase) -> dict:
         "case": legal_case,
         "client": client,
         "assigned_lawyer": assigned_lawyer,
+        "team_lawyers": team_lawyers,
+        "team_lawyer_ids": {lawyer.id for lawyer in team_lawyers},
+        "available_chat_lawyers": [lawyer for lawyer in lawyers if lawyer.id not in {item.id for item in team_lawyers}],
         "lawyers": lawyers,
         "eligible_lawyers": eligible_lawyers,
         "stage_label": STAGE_LABELS[legal_case.stage],
         "priority_label": priority_label(legal_case.priority),
-        "risk": workspace["risk"],
         "assistant": {
             "summary": workspace["ai"]["summary"],
             "predicted_category": workspace["ai"]["predicted_category"],
@@ -1478,6 +1781,9 @@ def build_staff_case_detail(db: Session, legal_case: LegalCase) -> dict:
         "participants": participants,
         "finances": finances,
         "comments": workspace["comments"],
+        "communication_status": communication_status,
+        "last_activity": last_activity,
+        "next_action": next_action,
         "timeline": timeline[:20],
         "stage_progress": case_stage_progress(legal_case),
         "required_documents": detect_required_documents(legal_case, documents),
@@ -1583,7 +1889,6 @@ def login(request: Request, email: str = Form(...), password: str = Form(...), d
             status_code=400,
         )
     request.session["user_id"] = user.id
-    log_action(db, user, "Вход в систему")
     db.commit()
     return RedirectResponse("/app", status_code=303)
 
@@ -1887,13 +2192,17 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
                     }
                 )
 
-        pending_cases = [item for item in client_cases if not item.intake_approved]
+        pending_cases = [
+            item
+            for item in client_cases
+            if not item.intake_approved and normalize_intake_status(item.intake_status, item.intake_approved) == "PENDING_REVIEW"
+        ]
         if pending_cases:
             attention_items.append(f"На проверке администратора: {len(pending_cases)}")
         if overdue:
             attention_items.append(f"Есть просроченные задачи: {len(overdue)}")
         cases_without_lawyer = [
-            item for item in client_cases if item.intake_approved and item.stage != CaseStage.COMPLETED and not item.responsible_lawyer_id
+            item for item in client_cases if item.intake_approved and item.stage != CaseStage.COMPLETED and not case_team_members(item)
         ]
         if cases_without_lawyer:
             attention_items.append(f"Ожидают назначения юриста: {len(cases_without_lawyer)}")
@@ -1903,7 +2212,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
             if item.deadline and item.stage != CaseStage.COMPLETED and 0 <= (item.deadline - today).days <= 5
         ]
         if imminent_cases:
-            attention_items.append(f"Близкие дедлайны в течение 5 дней: {len(imminent_cases)}")
+            attention_items.append(f"Близкие сроки выполнения в течение 5 дней: {len(imminent_cases)}")
         if not attention_items:
             attention_items.append("Критичных действий со стороны клиента сейчас не требуется")
 
@@ -1924,6 +2233,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
                 "recent_messages": recent_messages,
                 "attention_items": attention_items,
                 "stage_labels": STAGE_LABELS,
+                "intake_status_labels": INTAKE_STATUS_LABELS,
                 "today": today,
             },
         )
@@ -1931,7 +2241,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         lawyers = db.scalars(select(User).where(User.role == Role.LAWYER).order_by(User.full_name, User.username)).all()
         case_stmt = select(LegalCase).where(LegalCase.intake_approved.is_(True)).order_by(LegalCase.opened_at.desc(), LegalCase.id.desc())
         if user.role == Role.LAWYER:
-            case_stmt = case_stmt.where(LegalCase.responsible_lawyer_id == user.id)
+            case_stmt = case_stmt.where(case_assignment_condition(user.id))
         staff_cases = db.scalars(case_stmt).all()
         case_ids = [item.id for item in staff_cases]
 
@@ -1945,7 +2255,10 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         today_tasks = [t for t in tasks if t.due_date == today and t.status != TaskStatus.DONE]
         cases_count = len(staff_cases)
         active_cases = len([item for item in staff_cases if item.stage != CaseStage.COMPLETED])
-        clients_count = db.scalar(select(func.count(Client.id))) or 0
+        if user.role == Role.LAWYER:
+            clients_count = len({item.client_id for item in staff_cases if item.client_id})
+        else:
+            clients_count = db.scalar(select(func.count(Client.id))) or 0
 
         relevant_documents = db.scalars(
             select(CaseDocument)
@@ -2042,6 +2355,28 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
                     "icon": "icon-message",
                 }
             )
+        completed_case_numbers = {item.case_number: item for item in staff_cases if item.stage == CaseStage.COMPLETED}
+        if completed_case_numbers:
+            audit_logs = db.scalars(
+                select(AuditLog)
+                .where(AuditLog.action == "Завершено дело")
+                .order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
+                .limit(20)
+            ).all()
+            for item in audit_logs:
+                case_number = (item.details or "").split(":", 1)[0].strip()
+                legal_case = completed_case_numbers.get(case_number)
+                if not legal_case:
+                    continue
+                recent_case_changes.append(
+                    {
+                        "date": _to_local_naive(item.created_at) or item.created_at,
+                        "title": "Дело завершено",
+                        "description": item.details or f"{legal_case.case_number}: {legal_case.title}",
+                        "case": legal_case,
+                        "icon": "icon-check-square",
+                    }
+                )
         recent_case_changes.sort(key=lambda item: item["date"], reverse=True)
 
         client_actions = []
@@ -2107,8 +2442,6 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
                 if (_to_local_naive(item.created_at) or item.created_at).date() >= today - timedelta(days=7)
             ]
         )
-        high_risk_cases = len([item for item in staff_cases if case_insights.get(item.id, {}).get("risk_level") == "high"])
-
         attention_cards = []
         if overdue:
             attention_cards.append(
@@ -2116,14 +2449,6 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
                     "title": "Просроченные задачи",
                     "text": "Есть задачи с пропущенным сроком. Их лучше вынести в первый фокус дня.",
                     "badge": str(len(overdue)),
-                }
-            )
-        if high_risk_cases:
-            attention_cards.append(
-                {
-                    "title": "Дела под риском",
-                    "text": "Часть дел требует ручной проверки сроков, стадии или загрузки ответственного.",
-                    "badge": str(high_risk_cases),
                 }
             )
         if critical_notifications:
@@ -2145,6 +2470,8 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
             ).all()
             for item in pending_cases:
                 intake_status = normalize_intake_status(item.intake_status, item.intake_approved)
+                if intake_status != "PENDING_REVIEW":
+                    continue
                 eligible_lawyers = filter_lawyers_by_specialization(
                     lawyers,
                     item.category or "",
@@ -2157,6 +2484,8 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
                         "case": item,
                         "intake_status": intake_status,
                         "intake_status_label": INTAKE_STATUS_LABELS[intake_status],
+                        "all_lawyers": lawyers,
+                        "eligible_lawyers": eligible_lawyers,
                         "recommendations": recommendations,
                     }
                 )
@@ -2164,7 +2493,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
                 attention_cards.insert(
                     0,
                     {
-                        "title": "Новые публичные заявки",
+                        "title": "Новые заявки",
                         "text": "В очереди есть обращения, которые еще не приняты в работу и не распределены по юристам.",
                         "badge": str(len(pending_intakes)),
                     },
@@ -2173,7 +2502,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
             attention_cards.append(
                 {
                     "title": "Ситуация стабильна",
-                    "text": "Критичных рисков по задачам и делам сейчас не обнаружено. Можно сфокусироваться на плановой работе.",
+                    "text": "Критичных отклонений по задачам и делам сейчас не обнаружено. Можно сфокусироваться на плановой работе.",
                     "badge": "OK",
                 }
             )
@@ -2210,7 +2539,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         }
         return templates.TemplateResponse(
             "dashboard.html",
-            {"request": request, **data, "user": user, "status_labels": STATUS_LABELS, "today": today},
+            {"request": request, **data, "user": user, "status_labels": STATUS_LABELS, "stage_labels": STAGE_LABELS, "today": today},
         )
 
 
@@ -2376,12 +2705,76 @@ def _safe_client_return_path(raw_path: str, fallback: str) -> str:
     return fallback
 
 
+def _safe_staff_return_path(raw_path: str, fallback: str) -> str:
+    candidate = (raw_path or "").strip()
+    if (
+        candidate.startswith("/clients")
+        or candidate.startswith("/cases")
+        or candidate.startswith("/app")
+        or candidate.startswith("/kanban")
+        or candidate.startswith("/calendar")
+        or candidate.startswith("/reports")
+        or candidate.startswith("/settings")
+        or candidate.startswith("/notifications")
+        or candidate.startswith("/tasks")
+    ):
+        return candidate
+    return fallback
+
+
+def _append_query_flag(path: str, flag: str) -> str:
+    separator = "&" if "?" in path else "?"
+    return f"{path}{separator}{flag}=1"
+
+
+def _remove_document_file(document: CaseDocument) -> None:
+    file_path = UPLOADS_DIR / (document.stored_filename or "")
+    if file_path.exists():
+        try:
+            file_path.unlink()
+        except OSError:
+            pass
+
+
+def delete_case_tree(db: Session, legal_case: LegalCase) -> None:
+    documents = db.scalars(select(CaseDocument).where(CaseDocument.legal_case_id == legal_case.id)).all()
+    for document in documents:
+        _remove_document_file(document)
+        db.delete(document)
+
+    db.execute(delete(CaseComment).where(CaseComment.legal_case_id == legal_case.id))
+    db.execute(delete(CaseTask).where(CaseTask.legal_case_id == legal_case.id))
+    db.execute(delete(CalendarEvent).where(CalendarEvent.legal_case_id == legal_case.id))
+    db.execute(delete(Invoice).where(Invoice.legal_case_id == legal_case.id))
+    db.execute(delete(ClientChatMessage).where(ClientChatMessage.legal_case_id == legal_case.id))
+    db.execute(delete(case_lawyers).where(case_lawyers.c.case_id == legal_case.id))
+    db.delete(legal_case)
+
+
+def delete_client_tree(db: Session, client: Client) -> None:
+    cases = db.scalars(select(LegalCase).where(LegalCase.client_id == client.id)).all()
+    for legal_case in cases:
+        delete_case_tree(db, legal_case)
+
+    db.execute(delete(ClientChatMessage).where(ClientChatMessage.client_id == client.id))
+
+    linked_user = db.get(User, client.user_id) if client.user_id else None
+    db.delete(client)
+
+    if linked_user and linked_user.role == Role.CLIENT:
+        db.execute(delete(Notification).where(Notification.recipient_id == linked_user.id))
+        logs = db.scalars(select(AuditLog).where(AuditLog.user_id == linked_user.id)).all()
+        for item in logs:
+            item.user_id = None
+        db.delete(linked_user)
+
+
 @app.post("/admin/intake/{case_id}/accept")
 def accept_client_intake(
     case_id: int,
     request: Request,
-    responsible_lawyer_id: int = Form(...),
     priority: str = Form("MEDIUM"),
+    return_to: str = Form(""),
     db: Session = Depends(get_db),
 ):
     admin = require_admin(request, db)
@@ -2389,13 +2782,25 @@ def accept_client_intake(
     if not legal_case:
         raise HTTPException(status_code=404, detail="Обращение не найдено")
     if legal_case.intake_approved:
-        return RedirectResponse("/app?intake_accepted=1", status_code=303)
+        return RedirectResponse(_safe_staff_return_path(return_to, "/app?intake_accepted=1"), status_code=303)
 
-    lawyer = db.get(User, responsible_lawyer_id)
-    if not lawyer or lawyer.role != Role.LAWYER:
-        raise HTTPException(status_code=400, detail="Выбран некорректный юрист")
-    if not lawyer_matches_case_specialization(lawyer, legal_case.category, legal_case.title, legal_case.description or ""):
-        return RedirectResponse("/app?intake_error=specialization", status_code=303)
+    lawyers = db.scalars(select(User).where(User.role == Role.LAWYER)).all()
+    eligible_lawyers = filter_lawyers_by_specialization(
+        lawyers,
+        legal_case.category,
+        legal_case.title,
+        legal_case.description or "",
+    )
+    ranking_pool = eligible_lawyers or lawyers
+    ranked = topsis_rank(legal_case.category or legal_case.title, ranking_pool) if ranking_pool else []
+    if not ranked:
+        target = _safe_staff_return_path(return_to, "/app?intake_error=no_lawyer")
+        if "intake_error=" not in target:
+            separator = "&" if "?" in target else "?"
+            target = f"{target}{separator}intake_error=no_lawyer"
+        return RedirectResponse(target, status_code=303)
+    team_lawyers = [ranked[0].user]
+    lawyer = team_lawyers[0]
 
     priority_value = (priority or "MEDIUM").strip().upper()
     if priority_value not in {"LOW", "MEDIUM", "HIGH"}:
@@ -2406,28 +2811,14 @@ def accept_client_intake(
     legal_case.intake_approved = True
     legal_case.intake_status = "APPROVED"
     legal_case.intake_admin_comment = ""
-    if lawyer not in legal_case.lawyers:
-        legal_case.lawyers.append(lawyer)
+    legal_case.lawyers = team_lawyers
 
-    if not legal_case.is_consultation:
-        db.add(
-            CaseTask(
-                legal_case_id=legal_case.id,
-                title="Первичный разбор обращения клиента",
-                description="Создано администратором при принятии обращения.",
-                due_date=date.today() + timedelta(days=1),
-                status=TaskStatus.TODO,
-                priority="HIGH",
-                assignee_id=lawyer.id,
-            )
-        )
-
-    db.add(
-        Notification(
-            recipient_id=lawyer.id,
-            title="Обращение принято и назначено вам",
-            message=f"{legal_case.case_number}: {legal_case.title}" + (" • дело-консультация" if legal_case.is_consultation else ""),
-        )
+    team_names = case_team_display(legal_case)
+    notify_case_team(
+        db,
+        legal_case,
+        "Обращение принято и назначено вам",
+        f"{legal_case.case_number}: {legal_case.title}" + (" • дело-консультация" if legal_case.is_consultation else ""),
     )
     client_user = _find_client_user_for_case(db, legal_case)
     if client_user:
@@ -2435,13 +2826,13 @@ def accept_client_intake(
             Notification(
                 recipient_id=client_user.id,
                 title="Ваше обращение принято",
-                message=f"{legal_case.case_number}: обращение принято в работу. Назначен юрист: {lawyer.full_name or lawyer.username}",
+                message=f"{legal_case.case_number}: обращение принято в работу. Юридическая команда: {team_names}",
             )
         )
 
-    log_action(db, admin, "Принято обращение клиента", f"{legal_case.case_number} -> {lawyer.full_name or lawyer.username}")
+    log_action(db, admin, "Принято обращение клиента", f"{legal_case.case_number} -> {team_names}")
     db.commit()
-    return RedirectResponse("/app?intake_accepted=1", status_code=303)
+    return RedirectResponse(_safe_staff_return_path(return_to, "/app?intake_accepted=1"), status_code=303)
 
 
 @app.post("/admin/intake/{case_id}/clarify")
@@ -2449,6 +2840,7 @@ def request_intake_clarification(
     case_id: int,
     request: Request,
     comment: str = Form(""),
+    return_to: str = Form(""),
     db: Session = Depends(get_db),
 ):
     admin = require_admin(request, db)
@@ -2456,7 +2848,7 @@ def request_intake_clarification(
     if not legal_case:
         raise HTTPException(status_code=404, detail="Обращение не найдено")
     if legal_case.intake_approved:
-        return RedirectResponse("/app?intake_error=already_approved", status_code=303)
+        return RedirectResponse(_safe_staff_return_path(return_to, "/app?intake_error=already_approved"), status_code=303)
 
     admin_comment = comment.strip() or "Администратор запросил уточнение по обращению."
     legal_case.intake_status = "NEEDS_CLARIFICATION"
@@ -2475,17 +2867,23 @@ def request_intake_clarification(
 
     log_action(db, admin, "Обращение отправлено на уточнение", f"{legal_case.case_number}")
     db.commit()
-    return RedirectResponse("/app?intake_clarified=1", status_code=303)
+    return RedirectResponse(_safe_staff_return_path(return_to, "/app?intake_clarified=1"), status_code=303)
 
 
 @app.post("/admin/intake/{case_id}/close")
-def close_intake_request(case_id: int, request: Request, comment: str = Form(""), db: Session = Depends(get_db)):
+def close_intake_request(
+    case_id: int,
+    request: Request,
+    comment: str = Form(""),
+    return_to: str = Form(""),
+    db: Session = Depends(get_db),
+):
     admin = require_admin(request, db)
     legal_case = db.get(LegalCase, case_id)
     if not legal_case:
         raise HTTPException(status_code=404, detail="Обращение не найдено")
     if legal_case.intake_approved:
-        return RedirectResponse("/app?intake_error=already_approved", status_code=303)
+        return RedirectResponse(_safe_staff_return_path(return_to, "/app?intake_error=already_approved"), status_code=303)
 
     close_comment = comment.strip() or "Обращение закрыто администратором."
     legal_case.intake_status = "CLOSED"
@@ -2505,7 +2903,7 @@ def close_intake_request(case_id: int, request: Request, comment: str = Form("")
 
     log_action(db, admin, "Обращение закрыто", f"{legal_case.case_number}")
     db.commit()
-    return RedirectResponse("/app?intake_closed=1", status_code=303)
+    return RedirectResponse(_safe_staff_return_path(return_to, "/app?intake_closed=1"), status_code=303)
 
 
 @app.get("/client/profile", response_class=HTMLResponse)
@@ -2801,8 +3199,149 @@ def client_case_detail_page(case_id: int, request: Request, db: Session = Depend
             "stage_labels": STAGE_LABELS,
             "status_labels": STATUS_LABELS,
             "intake_status_labels": INTAKE_STATUS_LABELS,
+            "preferred_contact_method_labels": PREFERRED_CONTACT_METHOD_LABELS,
         },
     )
+
+
+@app.post("/client/cases/{case_id}/withdraw")
+def withdraw_client_case(
+    case_id: int,
+    request: Request,
+    return_to: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    user, client = require_client_account(request, db)
+    legal_case = db.get(LegalCase, case_id)
+    if not legal_case or legal_case.client_id != client.id:
+        raise HTTPException(status_code=404, detail="Обращение не найдено")
+
+    intake_status = normalize_intake_status(legal_case.intake_status, legal_case.intake_approved)
+    default_redirect = f"/client/cases/{case_id}"
+    redirect_base = _safe_client_return_path(return_to, default_redirect)
+    if legal_case.intake_approved or intake_status != "PENDING_REVIEW":
+        return RedirectResponse(_append_query_flag(redirect_base, "withdraw_forbidden"), status_code=303)
+
+    legal_case.intake_status = "WITHDRAWN"
+    legal_case.intake_admin_comment = ""
+
+    db.add(
+        CaseComment(
+            legal_case_id=legal_case.id,
+            user_id=user.id,
+            message="Клиент отозвал обращение до рассмотрения администратором.",
+            is_internal=False,
+        )
+    )
+
+    admins = db.scalars(select(User).where(User.role == Role.ADMIN)).all()
+    for admin in admins:
+        db.add(
+            Notification(
+                recipient_id=admin.id,
+                title="Клиент отозвал обращение",
+                message=f"{legal_case.case_number}: клиент отозвал обращение до рассмотрения",
+            )
+        )
+
+    db.add(
+        Notification(
+            recipient_id=user.id,
+            title="Вы отозвали обращение",
+            message=f"{legal_case.case_number}: заявка отозвана и снята с проверки администратора",
+        )
+    )
+
+    log_action(db, user, "Клиент отозвал обращение", f"{legal_case.case_number}: {legal_case.title}")
+    db.commit()
+    return RedirectResponse(_append_query_flag(redirect_base, "withdrawn"), status_code=303)
+
+
+@app.post("/client/cases/{case_id}/edit")
+def edit_client_case(
+    case_id: int,
+    request: Request,
+    case_title: str = Form(...),
+    category: str = Form(...),
+    message: str = Form(...),
+    preferred_contact_method: str = Form("CHAT"),
+    allow_phone_contact: str = Form(""),
+    is_consultation: str = Form(""),
+    documents: list[UploadFile] = File(default=[]),
+    db: Session = Depends(get_db),
+):
+    user, client = require_client_account(request, db)
+    legal_case = db.get(LegalCase, case_id)
+    if not legal_case or legal_case.client_id != client.id:
+        raise HTTPException(status_code=404, detail="Обращение не найдено")
+
+    intake_status = normalize_intake_status(legal_case.intake_status, legal_case.intake_approved)
+    if legal_case.intake_approved or intake_status != "NEEDS_CLARIFICATION":
+        return RedirectResponse(f"/client/cases/{case_id}?error=edit_forbidden", status_code=303)
+
+    problem_text = message.strip()
+    if not problem_text:
+        return RedirectResponse(f"/client/cases/{case_id}?error=message", status_code=303)
+
+    preferred_method = (preferred_contact_method or "CHAT").strip().upper()
+    if preferred_method not in PREFERRED_CONTACT_METHOD_LABELS:
+        preferred_method = "CHAT"
+    allow_phone_contact_value = allow_phone_contact.strip().lower() in {"1", "true", "yes", "on"}
+    is_consultation_value = is_consultation.strip().lower() in {"1", "true", "yes", "on"}
+    client_phone = (client.phone or "").strip()
+    if (allow_phone_contact_value or preferred_method == "PHONE") and not client_phone:
+        return RedirectResponse(f"/client/cases/{case_id}?error=phone_missing", status_code=303)
+
+    legal_case.title = case_title.strip()
+    legal_case.category = category.strip() or "Общее"
+    legal_case.description = problem_text
+    legal_case.preferred_contact_method = preferred_method
+    legal_case.allow_phone_contact = allow_phone_contact_value
+    legal_case.is_consultation = is_consultation_value
+    legal_case.intake_status = "PENDING_REVIEW"
+    legal_case.intake_admin_comment = ""
+    legal_case.stage = CaseStage.NEW_REQUEST
+    client.notes = problem_text
+
+    db.add(
+        CaseComment(
+            legal_case_id=legal_case.id,
+            user_id=user.id,
+            message=f"Клиент обновил обращение и повторно отправил его на проверку: {problem_text[:300]}",
+            is_internal=False,
+        )
+    )
+
+    for uploaded in documents:
+        if not uploaded.filename:
+            continue
+        original_name, stored_name, mime_type, file_bytes = _store_uploaded_file(uploaded)
+        db.add(
+            CaseDocument(
+                legal_case_id=legal_case.id,
+                uploaded_by_user_id=user.id,
+                original_filename=original_name,
+                stored_filename=stored_name,
+                mime_type=mime_type,
+                file_size=len(file_bytes),
+                file_content=file_bytes,
+                description="Документ после доработки обращения",
+            )
+        )
+
+    admins = db.scalars(select(User).where(User.role == Role.ADMIN)).all()
+    for admin in admins:
+        db.add(
+            Notification(
+                recipient_id=admin.id,
+                title="Обращение обновлено клиентом",
+                message=f"{legal_case.case_number}: клиент внес исправления и повторно отправил обращение на проверку",
+            )
+        )
+
+    log_action(db, user, "Клиент обновил обращение", f"{legal_case.case_number}: {legal_case.title}")
+    db.commit()
+    return RedirectResponse(f"/client/cases/{case_id}?edited=1", status_code=303)
 
 
 @app.post("/client/cases/{case_id}/supplement")
@@ -2979,14 +3518,12 @@ def client_documents_upload(
     uploaded_count = len(uploaded_names)
     first_name = uploaded_names[0]
     summary = first_name if uploaded_count == 1 else f"{first_name} и еще {uploaded_count - 1}"
-    if legal_case.responsible_lawyer_id:
-        db.add(
-            Notification(
-                recipient_id=legal_case.responsible_lawyer_id,
-                title="Клиент добавил документы" if uploaded_count > 1 else "Клиент добавил документ",
-                message=f"{legal_case.case_number}: {summary}",
-            )
-        )
+    notify_case_team(
+        db,
+        legal_case,
+        "Клиент добавил документы" if uploaded_count > 1 else "Клиент добавил документ",
+        f"{legal_case.case_number}: {summary}",
+    )
     db.add(
         Notification(
             recipient_id=user.id,
@@ -3040,14 +3577,12 @@ def client_document_delete(
             message=f"Файл «{document_name}» удален из дела {legal_case.case_number}",
         )
     )
-    if legal_case.responsible_lawyer_id:
-        db.add(
-            Notification(
-                recipient_id=legal_case.responsible_lawyer_id,
-                title="Клиент удалил документ",
-                message=f"{legal_case.case_number}: {document_name}",
-            )
-        )
+    notify_case_team(
+        db,
+        legal_case,
+        "Клиент удалил документ",
+        f"{legal_case.case_number}: {document_name}",
+    )
     db.commit()
     if wants_json:
         return JSONResponse({"ok": True, "deleted_id": document_id})
@@ -3148,8 +3683,7 @@ def staff_case_documents_upload(
     legal_case = db.get(LegalCase, case_id)
     if not legal_case or not legal_case.intake_approved:
         raise HTTPException(status_code=404, detail="Дело не найдено")
-    if user.role == Role.LAWYER and legal_case.responsible_lawyer_id != user.id:
-        raise HTTPException(status_code=403, detail="Нет доступа к делу")
+    ensure_staff_case_access(user, legal_case)
 
     valid_documents = [item for item in documents if item and item.filename]
     if not valid_documents:
@@ -3200,8 +3734,7 @@ def staff_document_delete(document_id: int, request: Request, db: Session = Depe
     legal_case = db.get(LegalCase, document.legal_case_id)
     if not legal_case:
         raise HTTPException(status_code=404, detail="Дело не найдено")
-    if user.role == Role.LAWYER and legal_case.responsible_lawyer_id != user.id:
-        raise HTTPException(status_code=403, detail="Нет доступа к документу")
+    ensure_staff_case_access(user, legal_case, "Нет доступа к документу")
 
     document_name = document.original_filename or "документ"
     db.delete(document)
@@ -3226,8 +3759,7 @@ def staff_document_download(document_id: int, request: Request, db: Session = De
     legal_case = db.get(LegalCase, document.legal_case_id)
     if not legal_case:
         raise HTTPException(status_code=404, detail="Дело не найдено")
-    if user.role == Role.LAWYER and legal_case.responsible_lawyer_id != user.id:
-        raise HTTPException(status_code=403, detail="Нет доступа к документу")
+    ensure_staff_case_access(user, legal_case, "Нет доступа к документу")
 
     file_bytes, mime_type = _load_document_bytes(document)
     if file_bytes is None:
@@ -3245,8 +3777,7 @@ def staff_document_view(document_id: int, request: Request, db: Session = Depend
     legal_case = db.get(LegalCase, document.legal_case_id)
     if not legal_case:
         raise HTTPException(status_code=404, detail="Дело не найдено")
-    if user.role == Role.LAWYER and legal_case.responsible_lawyer_id != user.id:
-        raise HTTPException(status_code=403, detail="Нет доступа к документу")
+    ensure_staff_case_access(user, legal_case, "Нет доступа к документу")
 
     file_bytes, mime_type = _load_document_bytes(document)
     if file_bytes is None:
@@ -3306,6 +3837,7 @@ def client_chat_page(request: Request, case_id: int | None = None, db: Session =
     my_cases = db.scalars(
         select(LegalCase).where(LegalCase.client_id == client.id).order_by(LegalCase.opened_at.desc(), LegalCase.id.desc())
     ).all()
+    my_cases = [item for item in my_cases if case_visible_in_client_chat(item)]
     selected_case = None
     if my_cases:
         selected_case = next((item for item in my_cases if item.id == case_id), my_cases[0])
@@ -3362,7 +3894,11 @@ def client_chat_send(
     legal_case = db.get(LegalCase, legal_case_id)
     if not legal_case or legal_case.client_id != client.id:
         raise HTTPException(status_code=404, detail="Дело не найдено")
-    if not legal_case.responsible_lawyer_id:
+    if not case_visible_in_client_chat(legal_case):
+        if request.headers.get("x-requested-with") == "XMLHttpRequest":
+            raise HTTPException(status_code=400, detail="Переписка для этого обращения недоступна")
+        return RedirectResponse("/client/chat", status_code=303)
+    if not case_team_members(legal_case):
         if request.headers.get("x-requested-with") == "XMLHttpRequest":
             raise HTTPException(status_code=400, detail="Юрист еще не назначен")
         return RedirectResponse(f"/client/chat?case_id={legal_case_id}&error=lawyer", status_code=303)
@@ -3380,6 +3916,12 @@ def client_chat_send(
         is_from_client=True,
     )
     db.add(new_message)
+    notify_case_team(
+        db,
+        legal_case,
+        "Новое сообщение клиента",
+        f"{legal_case.case_number}: {text[:120]}",
+    )
     db.commit()
     assigned_lawyer = db.get(User, legal_case.responsible_lawyer_id) if legal_case.responsible_lawyer_id else None
     messages = build_case_message_payload(db, client, legal_case, assigned_lawyer)
@@ -3475,17 +4017,38 @@ def client_calendar_page(request: Request, db: Session = Depends(get_db)):
 
 @app.get("/clients", response_class=HTMLResponse)
 def clients_page(request: Request, q: str = "", chat_client_id: int | None = None, db: Session = Depends(get_db)):
-    user = require_auth(request, db)
+    user = require_staff(request, db)
     stmt = select(Client)
     if q.strip():
         stmt = stmt.where(Client.name.ilike(f"%{q.strip()}%"))
+    assigned_client_ids: set[int] | None = None
+    if user.role == Role.LAWYER:
+        assigned_client_ids = {
+            item[0]
+            for item in db.execute(
+                select(LegalCase.client_id)
+                .where(LegalCase.intake_approved.is_(True))
+                .where(case_assignment_condition(user.id))
+            ).all()
+        }
+        if assigned_client_ids:
+            stmt = stmt.where(Client.id.in_(assigned_client_ids))
+        else:
+            stmt = stmt.where(Client.id == -1)
     clients = db.scalars(stmt.order_by(Client.id.desc())).all()
     client_ids = [item.id for item in clients]
-    client_cases = db.scalars(select(LegalCase).where(LegalCase.client_id.in_(client_ids))).all() if client_ids else []
+    client_case_stmt = select(LegalCase).where(LegalCase.client_id.in_(client_ids))
+    if user.role == Role.LAWYER:
+        client_case_stmt = client_case_stmt.where(LegalCase.intake_approved.is_(True)).where(case_assignment_condition(user.id))
+    client_cases = db.scalars(client_case_stmt).all() if client_ids else []
+    client_cases = [item for item in client_cases if case_visible_in_staff_cabinet(item)]
     case_ids = [item.id for item in client_cases]
     client_documents = db.scalars(select(CaseDocument).where(CaseDocument.legal_case_id.in_(case_ids))).all() if case_ids else []
+    client_message_stmt = select(ClientChatMessage).where(ClientChatMessage.client_id.in_(client_ids))
+    if user.role == Role.LAWYER:
+        client_message_stmt = client_message_stmt.where(ClientChatMessage.legal_case_id.in_(case_ids) if case_ids else ClientChatMessage.id == -1)
     client_messages = db.scalars(
-        select(ClientChatMessage).where(ClientChatMessage.client_id.in_(client_ids)).order_by(ClientChatMessage.created_at.desc(), ClientChatMessage.id.desc())
+        client_message_stmt.order_by(ClientChatMessage.created_at.desc(), ClientChatMessage.id.desc())
     ).all() if client_ids else []
     client_invoices = db.scalars(select(Invoice).where(Invoice.legal_case_id.in_(case_ids))).all() if case_ids else []
 
@@ -3543,8 +4106,11 @@ def clients_page(request: Request, q: str = "", chat_client_id: int | None = Non
         )
 
     initial_chat_client_id = None
-    if chat_client_id and db.get(Client, chat_client_id):
+    if chat_client_id and any(client.id == chat_client_id for client in clients):
         initial_chat_client_id = chat_client_id
+    created_client_name = request.session.pop("created_client_name", "") if "created_client_name" in request.session else ""
+    created_client_email = request.session.pop("created_client_email", "") if "created_client_email" in request.session else ""
+    created_client_password = request.session.pop("created_client_password", "") if "created_client_password" in request.session else ""
     return templates.TemplateResponse(
         "clients.html",
         {
@@ -3555,6 +4121,12 @@ def clients_page(request: Request, q: str = "", chat_client_id: int | None = Non
             "initial_chat_client_id": initial_chat_client_id,
             "user": user,
             "created": request.query_params.get("created") == "1",
+            "deleted": request.query_params.get("deleted") == "1",
+            "created_client_name": created_client_name,
+            "created_client_email": created_client_email,
+            "created_client_password": created_client_password,
+            "error": request.query_params.get("error", "").strip(),
+            "lawyer_removed": request.query_params.get("lawyer_removed") == "1",
             "totals": {
                 "clients": len(clients),
                 "active_cases": sum(item["cases_active"] for item in client_rows),
@@ -3568,41 +4140,117 @@ def clients_page(request: Request, q: str = "", chat_client_id: int | None = Non
 def create_client(
     request: Request,
     name: str = Form(...),
-    client_type: str = Form("ORGANIZATION"),
-    email: str = Form(""),
+    client_type: str = Form("PERSON"),
+    email: str = Form(...),
     phone: str = Form(""),
     address: str = Form(""),
+    inn: str = Form(""),
+    ogrn: str = Form(""),
+    bank_details: str = Form(""),
+    passport_details: str = Form(""),
+    other_details: str = Form(""),
     notes: str = Form(""),
     db: Session = Depends(get_db),
 ):
-    user = require_auth(request, db)
+    user = require_admin(request, db)
     clean_name = name.strip()
     if len(clean_name) < 2:
         return RedirectResponse("/clients?error=invalid", status_code=303)
+    cleaned_email = email.strip().lower()
+    if not EMAIL_RE.fullmatch(cleaned_email):
+        return RedirectResponse("/clients?error=email", status_code=303)
+    if find_user_by_email(db, cleaned_email) or find_client_by_email(db, cleaned_email):
+        return RedirectResponse("/clients?error=email_exists", status_code=303)
 
-    db.add(
-        Client(
-            name=clean_name,
-            client_type=(client_type or "ORGANIZATION").upper(),
-            email=email.strip().lower(),
-            phone=phone.strip(),
-            address=address.strip(),
-            notes=notes.strip(),
-        )
+    normalized_client_type = (client_type or "PERSON").strip().upper()
+    if normalized_client_type not in {"PERSON", "ORGANIZATION"}:
+        normalized_client_type = "PERSON"
+    generated_password = generate_secure_password(12)
+    username = generate_unique_username(db, cleaned_email)
+
+    new_user = User(
+        username=username,
+        full_name=clean_name,
+        email=cleaned_email,
+        phone=phone.strip(),
+        password_hash=hash_password(generated_password),
+        role=Role.CLIENT,
     )
+    db.add(new_user)
+    db.flush()
+
+    new_client = Client(
+        user_id=new_user.id,
+        name=clean_name,
+        client_type=normalized_client_type,
+        email=cleaned_email,
+        phone=phone.strip(),
+        address=address.strip(),
+        inn=re.sub(r"\D", "", inn)[:12],
+        ogrn=re.sub(r"\D", "", ogrn)[:15],
+        bank_details=bank_details.strip(),
+        passport_details=passport_details.strip(),
+        other_details=other_details.strip(),
+        notes=notes.strip(),
+    )
+    new_client.requisites = "\n".join(
+        part
+        for part in [
+            f"ИНН: {new_client.inn}" if new_client.inn else "",
+            f"ОГРН: {new_client.ogrn}" if new_client.ogrn else "",
+            f"Банковские реквизиты: {new_client.bank_details}" if new_client.bank_details else "",
+            f"Паспортные данные: {new_client.passport_details}" if new_client.passport_details else "",
+            f"Иные сведения: {new_client.other_details}" if new_client.other_details else "",
+        ]
+        if part
+    )
+    db.add(new_client)
     db.add(Notification(recipient_id=user.id, title="Новый клиент", message=f"Добавлен клиент: {clean_name}"))
     log_action(db, user, "Создан клиент", clean_name)
     db.commit()
+    request.session["created_client_name"] = clean_name
+    request.session["created_client_email"] = cleaned_email
+    request.session["created_client_password"] = generated_password
     return RedirectResponse("/clients?created=1", status_code=303)
+
+
+@app.post("/clients/{client_id}/delete")
+def delete_client(
+    client_id: int,
+    request: Request,
+    return_to: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    user = require_admin(request, db)
+    client = db.get(Client, client_id)
+    if not client:
+        raise HTTPException(status_code=404, detail="Клиент не найден")
+
+    client_name = client.name
+    delete_client_tree(db, client)
+    log_action(db, user, "Удален клиент", client_name)
+    db.commit()
+
+    target = _safe_staff_return_path(return_to, "/clients")
+    return RedirectResponse(_append_query_flag(target, "deleted"), status_code=303)
 
 
 @app.get("/clients/{client_id}/chat")
 def client_chat(client_id: int, request: Request, db: Session = Depends(get_db)):
-    _ = require_auth(request, db)
+    user = require_staff(request, db)
     client = db.get(Client, client_id)
     if not client:
         raise HTTPException(status_code=404, detail="Клиент не найден")
-    return JSONResponse(build_client_chat_payload(db, client))
+    if user.role == Role.LAWYER:
+        accessible_case = db.scalar(
+            select(LegalCase.id)
+            .where(LegalCase.client_id == client.id)
+            .where(LegalCase.intake_approved.is_(True))
+            .where(case_assignment_condition(user.id))
+        )
+        if not accessible_case:
+            raise HTTPException(status_code=403, detail="Нет доступа к обращениям клиента")
+    return JSONResponse(build_client_chat_payload(db, client, user))
 
 
 @app.post("/clients/{client_id}/chat")
@@ -3615,7 +4263,7 @@ def add_client_chat_message(
     return_to: str = Form(""),
     db: Session = Depends(get_db),
 ):
-    user = require_auth(request, db)
+    user = require_staff(request, db)
     client = db.get(Client, client_id)
     if not client:
         raise HTTPException(status_code=404, detail="Клиент не найден")
@@ -3626,6 +4274,7 @@ def add_client_chat_message(
 
     from_client = is_from_client.strip().lower() in {"1", "true", "yes", "on"}
     case_id_value = None
+    legal_case = None
     if legal_case_id.strip():
         if not legal_case_id.strip().isdigit():
             raise HTTPException(status_code=400, detail="Некорректное дело")
@@ -3633,6 +4282,9 @@ def add_client_chat_message(
         legal_case = db.get(LegalCase, case_id_value)
         if not legal_case or legal_case.client_id != client.id:
             raise HTTPException(status_code=400, detail="Дело не относится к клиенту")
+        ensure_staff_case_access(user, legal_case)
+    elif user.role == Role.LAWYER:
+        raise HTTPException(status_code=400, detail="Для сообщения юриста нужно выбрать назначенное дело")
 
     db.add(
         ClientChatMessage(
@@ -3647,7 +4299,7 @@ def add_client_chat_message(
     db.commit()
 
     if request.headers.get("x-requested-with") == "XMLHttpRequest":
-        return JSONResponse(build_client_chat_payload(db, client))
+        return JSONResponse(build_client_chat_payload(db, client, user))
     if return_to.strip():
         return RedirectResponse(return_to.strip(), status_code=303)
     return RedirectResponse("/clients", status_code=303)
@@ -3655,12 +4307,16 @@ def add_client_chat_message(
 
 @app.get("/cases", response_class=HTMLResponse)
 def cases_page(request: Request, client_id: int | None = None, db: Session = Depends(get_db)):
-    user = require_auth(request, db)
+    user = require_staff(request, db)
     stmt = select(LegalCase).where(LegalCase.intake_approved.is_(True)).order_by(LegalCase.id.desc())
     if user.role == Role.LAWYER:
-        stmt = stmt.where(LegalCase.responsible_lawyer_id == user.id)
+        stmt = stmt.where(case_assignment_condition(user.id))
     cases = db.scalars(stmt).all()
-    clients = db.scalars(select(Client).order_by(Client.name)).all()
+    client_stmt = select(Client).order_by(Client.name)
+    if user.role == Role.LAWYER:
+        visible_client_ids = {item.client_id for item in cases}
+        client_stmt = client_stmt.where(Client.id.in_(visible_client_ids) if visible_client_ids else Client.id == -1)
+    clients = db.scalars(client_stmt).all()
     lawyers = db.scalars(select(User).where(User.role == Role.LAWYER).order_by(User.full_name)).all()
     case_insights = build_case_insights(db, cases, lawyers)
     return templates.TemplateResponse(
@@ -3676,6 +4332,7 @@ def cases_page(request: Request, client_id: int | None = None, db: Session = Dep
             "generated_case_number": next_case_number(db),
             "user": user,
             "created": request.query_params.get("created") == "1",
+            "deleted": request.query_params.get("deleted") == "1",
             "prefill_client_id": client_id,
             "today": date.today(),
         },
@@ -3684,12 +4341,11 @@ def cases_page(request: Request, client_id: int | None = None, db: Session = Dep
 
 @app.get("/cases/{case_id}", response_class=HTMLResponse)
 def staff_case_detail_page(case_id: int, request: Request, db: Session = Depends(get_db)):
-    user = require_auth(request, db)
+    user = require_staff(request, db)
     legal_case = db.get(LegalCase, case_id)
     if not legal_case or not legal_case.intake_approved:
         raise HTTPException(status_code=404, detail="Дело не найдено")
-    if user.role == Role.LAWYER and legal_case.responsible_lawyer_id != user.id:
-        raise HTTPException(status_code=403, detail="Нет доступа к карточке дела")
+    ensure_staff_case_access(user, legal_case, "Нет доступа к карточке дела")
 
     detail = build_staff_case_detail(db, legal_case)
     return templates.TemplateResponse(
@@ -3718,37 +4374,26 @@ def create_case(
     stage: str = Form(CaseStage.NEW_REQUEST.value),
     priority: str = Form("MEDIUM"),
     deadline: str = Form(""),
-    responsible_lawyer_id: int | None = Form(None),
+    preferred_contact_method: str = Form("CHAT"),
+    allow_phone_contact: str = Form(""),
+    is_consultation: str = Form(""),
+    documents: list[UploadFile] = File(default=[]),
     return_to: str = Form(""),
     db: Session = Depends(get_db),
 ):
-    user = require_auth(request, db)
+    user = require_staff(request, db)
     client = db.get(Client, client_id)
     if not client:
         return RedirectResponse("/cases?error=client", status_code=303)
-    assigned_lawyer = None
-    if responsible_lawyer_id:
-        assigned_lawyer = db.get(User, responsible_lawyer_id)
-        if not assigned_lawyer or assigned_lawyer.role != Role.LAWYER:
-            return RedirectResponse("/cases?error=lawyer", status_code=303)
-        if not lawyer_matches_case_specialization(
-            assigned_lawyer,
-            category,
-            title,
-            description or "",
-        ):
-            target = return_to.strip() or "/cases?error=lawyer_specialization"
-            if target.startswith("/"):
-                separator = "&" if "?" in target else "?"
-                if "error=" not in target:
-                    target = f"{target}{separator}error=lawyer_specialization"
-            return RedirectResponse(target, status_code=303)
 
-    stage_value = CaseStage.NEW_REQUEST
-    try:
-        stage_value = CaseStage(stage)
-    except ValueError:
-        pass
+    preferred_method = (preferred_contact_method or "CHAT").strip().upper()
+    if preferred_method not in PREFERRED_CONTACT_METHOD_LABELS:
+        preferred_method = "CHAT"
+    allow_phone_contact_value = allow_phone_contact.strip().lower() in {"1", "true", "yes", "on"}
+    is_consultation_value = is_consultation.strip().lower() in {"1", "true", "yes", "on"}
+    client_phone = (client.phone or "").strip()
+    if (allow_phone_contact_value or preferred_method == "PHONE") and not client_phone:
+        return RedirectResponse("/cases?error=phone_missing", status_code=303)
 
     deadline_value = parse_iso_date(deadline)
     opened_at = date.today()
@@ -3759,27 +4404,61 @@ def create_case(
         title=title.strip(),
         category=category.strip() or "Общее",
         description=description.strip(),
-        stage=stage_value,
+        stage=CaseStage.NEW_REQUEST,
         priority=priority.strip().upper() or "MEDIUM",
+        intake_approved=False,
+        intake_status="PENDING_REVIEW",
+        intake_admin_comment="",
         opened_at=opened_at,
         deadline=deadline_value,
         client_id=client.id,
-        responsible_lawyer_id=responsible_lawyer_id,
+        responsible_lawyer_id=None,
+        is_consultation=is_consultation_value,
+        allow_phone_contact=allow_phone_contact_value,
+        preferred_contact_method=preferred_method,
     )
     db.add(legal_case)
     db.flush()
 
-    if assigned_lawyer:
-        legal_case.lawyers.append(assigned_lawyer)
-
-    db.add(
-        Notification(
-            recipient_id=user.id,
-            title="Создано новое дело",
-            message=f"{legal_case.case_number}: {legal_case.title}",
+    for uploaded in documents:
+        if not uploaded.filename:
+            continue
+        original_name, stored_name, mime_type, file_bytes = _store_uploaded_file(uploaded)
+        db.add(
+            CaseDocument(
+                legal_case_id=legal_case.id,
+                uploaded_by_user_id=user.id,
+                original_filename=original_name,
+                stored_filename=stored_name,
+                mime_type=mime_type,
+                file_size=len(file_bytes),
+                file_content=file_bytes,
+                description="Документ из формы создания обращения",
+            )
         )
-    )
-    log_action(db, user, "Создано дело", f"{legal_case.case_number}: {legal_case.title}")
+
+    admins = db.scalars(select(User).where(User.role == Role.ADMIN)).all()
+    for admin in admins:
+        db.add(
+            Notification(
+                recipient_id=admin.id,
+                title="Новое обращение на проверке",
+                message=(
+                    f"{legal_case.case_number}: {legal_case.title}"
+                    + (" • консультация" if is_consultation_value else "")
+                    + f" • контакт: {PREFERRED_CONTACT_METHOD_LABELS[preferred_method]}"
+                ),
+            )
+        )
+    if user.role != Role.ADMIN:
+        db.add(
+            Notification(
+                recipient_id=user.id,
+                title="Обращение отправлено на проверку",
+                message=f"{legal_case.case_number}: обращение зарегистрировано и ожидает одобрения администратора",
+            )
+        )
+    log_action(db, user, "Создано обращение", f"{legal_case.case_number}: {legal_case.title}")
     db.commit()
     if return_to.strip():
         return RedirectResponse(return_to.strip(), status_code=303)
@@ -3794,18 +4473,37 @@ def update_case_stage(
     return_to: str = Form(""),
     db: Session = Depends(get_db),
 ):
-    user = require_auth(request, db)
+    user = require_staff(request, db)
     legal_case = db.get(LegalCase, case_id)
     if not legal_case:
         raise HTTPException(status_code=404, detail="Дело не найдено")
+    ensure_staff_case_access(user, legal_case)
 
     try:
-        legal_case.stage = CaseStage(stage)
+        new_stage = CaseStage(stage)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Некорректная стадия") from exc
 
-    db.add(Notification(recipient_id=user.id, title="Стадия дела изменена", message=legal_case.case_number))
-    log_action(db, user, "Обновлена стадия дела", f"{legal_case.case_number} -> {legal_case.stage.value}")
+    previous_stage = legal_case.stage
+    legal_case.stage = new_stage
+    actor = user.full_name or user.username
+    if previous_stage != new_stage:
+        stage_message = (
+            f"{legal_case.case_number}: {legal_case.title} — стадия изменена "
+            f"с «{STAGE_LABELS[previous_stage]}» на «{STAGE_LABELS[new_stage]}». Изменил: {actor}"
+        )
+        recipient_ids = {user.id}
+        recipient_ids.update(lawyer.id for lawyer in case_team_members(legal_case))
+        recipient_ids.update(db.scalars(select(User.id).where(User.role == Role.ADMIN)).all())
+        if legal_case.client and legal_case.client.user_id:
+            recipient_ids.add(legal_case.client.user_id)
+        for recipient_id in recipient_ids:
+            db.add(Notification(recipient_id=recipient_id, title="Стадия дела изменена", message=stage_message))
+
+    if previous_stage != CaseStage.COMPLETED and legal_case.stage == CaseStage.COMPLETED:
+        log_action(db, user, "Завершено дело", f"{legal_case.case_number}: {legal_case.title} — {actor}")
+    elif previous_stage != new_stage:
+        log_action(db, user, "Обновлена стадия дела", f"{legal_case.case_number} -> {legal_case.stage.value}")
     db.commit()
     if request.headers.get("x-requested-with") == "XMLHttpRequest":
         return JSONResponse({"ok": True, "label": STAGE_LABELS[legal_case.stage]})
@@ -3824,31 +4522,34 @@ def update_case_details(
     deadline: str = Form(""),
     priority: str = Form("MEDIUM"),
     responsible_lawyer_id: str = Form(""),
+    team_lawyer_ids: list[str] = Form(default=[]),
     return_to: str = Form(""),
     db: Session = Depends(get_db),
 ):
-    user = require_auth(request, db)
+    user = require_staff(request, db)
     legal_case = db.get(LegalCase, case_id)
     if not legal_case:
         raise HTTPException(status_code=404, detail="Дело не найдено")
+    ensure_staff_case_access(user, legal_case)
 
-    lawyer_id_value = None
-    selected_lawyer = None
-    raw_lawyer_id = (responsible_lawyer_id or "").strip()
-    if raw_lawyer_id:
-        try:
-            lawyer_id_value = int(raw_lawyer_id)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail="Некорректный юрист") from exc
-        selected_lawyer = db.get(User, lawyer_id_value)
-        if not selected_lawyer or selected_lawyer.role != Role.LAWYER:
+    lawyer_id_value = legal_case.responsible_lawyer_id
+    team_lawyers = case_team_members(legal_case)
+    if user.role == Role.ADMIN:
+        raw_lawyer_id = (responsible_lawyer_id or "").strip()
+        parsed_lawyer_id = int(raw_lawyer_id) if raw_lawyer_id.isdigit() else None
+        if raw_lawyer_id and parsed_lawyer_id is None:
             raise HTTPException(status_code=400, detail="Некорректный юрист")
-        if not lawyer_matches_case_specialization(
-            selected_lawyer,
+        team_lawyers, team_error = resolve_case_team_lawyers(
+            db,
+            team_lawyer_ids,
+            parsed_lawyer_id,
             category,
             title,
             description or "",
-        ):
+        )
+        if team_error == "lawyer":
+            raise HTTPException(status_code=400, detail="Некорректный юрист")
+        if team_error == "lawyer_specialization":
             if request.headers.get("x-requested-with") == "XMLHttpRequest":
                 raise HTTPException(status_code=400, detail="Специализация юриста не соответствует категории дела")
             target = return_to.strip() or f"/cases/{case_id}?error=lawyer_specialization"
@@ -3857,6 +4558,7 @@ def update_case_details(
                 if "error=" not in target:
                     target = f"{target}{separator}error=lawyer_specialization"
             return RedirectResponse(target, status_code=303)
+        lawyer_id_value = parsed_lawyer_id
 
     deadline_value = parse_iso_date(deadline) if deadline else None
     legal_case.title = title.strip()
@@ -3866,8 +4568,8 @@ def update_case_details(
     legal_case.priority = priority.strip().upper() or "MEDIUM"
     legal_case.responsible_lawyer_id = lawyer_id_value
 
-    if selected_lawyer and selected_lawyer not in legal_case.lawyers:
-        legal_case.lawyers.append(selected_lawyer)
+    if user.role == Role.ADMIN:
+        legal_case.lawyers = team_lawyers
 
     db.add(
         Notification(
@@ -3894,12 +4596,13 @@ def update_case_details(
                         legal_case.priority,
                         legal_case.priority,
                     ),
-                    "deadline": legal_case.deadline.strftime("%d.%m.%Y") if legal_case.deadline else "Без дедлайна",
+                    "deadline": legal_case.deadline.strftime("%d.%m.%Y") if legal_case.deadline else "Без срока выполнения",
                     "deadline_input": legal_case.deadline.isoformat() if legal_case.deadline else "",
                     "responsible_lawyer_id": legal_case.responsible_lawyer_id or "",
                     "responsible_lawyer_name": (
                         (assignee.full_name or assignee.username) if assignee else "Не назначен"
                     ),
+                    "team_lawyer_names": case_team_display(legal_case),
                 },
             }
         )
@@ -3908,11 +4611,161 @@ def update_case_details(
     return RedirectResponse("/kanban", status_code=303)
 
 
+@app.post("/cases/{case_id}/lawyers/{lawyer_id}/remove")
+def remove_case_lawyer(
+    case_id: int,
+    lawyer_id: int,
+    request: Request,
+    return_to: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    user = require_admin(request, db)
+    legal_case = db.get(LegalCase, case_id)
+    if not legal_case:
+        raise HTTPException(status_code=404, detail="Дело не найдено")
+
+    team_members = case_team_members(legal_case)
+    lawyer = next((item for item in team_members if item.id == lawyer_id), None)
+    if not lawyer:
+        target = _safe_staff_return_path(return_to, "/clients")
+        return RedirectResponse(target, status_code=303)
+
+    remaining = [item for item in team_members if item.id != lawyer_id]
+    if legal_case.responsible_lawyer_id == lawyer_id:
+        legal_case.responsible_lawyer_id = remaining[0].id if remaining else None
+
+    assigned_relation = next((item for item in legal_case.lawyers if item.id == lawyer_id), None)
+    if assigned_relation:
+        legal_case.lawyers.remove(assigned_relation)
+
+    db.add(
+        Notification(
+            recipient_id=lawyer.id,
+            title="Вы исключены из дела",
+            message=f"{legal_case.case_number}: {legal_case.title}",
+        )
+    )
+    log_action(db, user, "Юрист удален из дела", f"{legal_case.case_number}: {lawyer.full_name or lawyer.username}")
+    db.commit()
+
+    target = _safe_staff_return_path(return_to, "/clients")
+    return RedirectResponse(_append_query_flag(target, "lawyer_removed"), status_code=303)
+
+
+@app.post("/cases/{case_id}/delete")
+def delete_case(
+    case_id: int,
+    request: Request,
+    return_to: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    user = require_admin(request, db)
+    legal_case = db.get(LegalCase, case_id)
+    if not legal_case:
+        raise HTTPException(status_code=404, detail="Дело не найдено")
+
+    summary = f"{legal_case.case_number}: {legal_case.title}"
+    delete_case_tree(db, legal_case)
+    log_action(db, user, "Удалено дело", summary)
+    db.commit()
+
+    target = _safe_staff_return_path(return_to, "/cases")
+    return RedirectResponse(_append_query_flag(target, "deleted"), status_code=303)
+
+
+@app.post("/cases/{case_id}/chat-lawyers/add")
+def add_case_chat_lawyer(
+    case_id: int,
+    request: Request,
+    lawyer_id: int = Form(...),
+    return_to: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    user = require_staff(request, db)
+    legal_case = db.get(LegalCase, case_id)
+    if not legal_case:
+        raise HTTPException(status_code=404, detail="Дело не найдено")
+    ensure_staff_case_access(user, legal_case)
+
+    lawyer = db.get(User, lawyer_id)
+    if not lawyer or lawyer.role != Role.LAWYER:
+        raise HTTPException(status_code=400, detail="Юрист не найден")
+
+    if not any(item.id == lawyer.id for item in case_team_members(legal_case)):
+        legal_case.lawyers.append(lawyer)
+        if not legal_case.responsible_lawyer_id:
+            legal_case.responsible_lawyer_id = lawyer.id
+        db.add(
+            Notification(
+                recipient_id=lawyer.id,
+                title="Вы подключены к чату дела",
+                message=f"{legal_case.case_number}: {legal_case.title}",
+            )
+        )
+        log_action(db, user, "Юрист подключен к чату дела", f"{legal_case.case_number}: {lawyer.full_name or lawyer.username}")
+        db.commit()
+
+    if return_to.strip():
+        return RedirectResponse(return_to.strip(), status_code=303)
+    return RedirectResponse(f"/cases/{case_id}?tab=communication#communication-panel", status_code=303)
+
+
+@app.post("/cases/{case_id}/chat-lawyers/{lawyer_id}/remove")
+def remove_case_chat_lawyer(
+    case_id: int,
+    lawyer_id: int,
+    request: Request,
+    return_to: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    user = require_staff(request, db)
+    legal_case = db.get(LegalCase, case_id)
+    if not legal_case:
+        raise HTTPException(status_code=404, detail="Дело не найдено")
+    ensure_staff_case_access(user, legal_case)
+
+    if legal_case.responsible_lawyer_id == lawyer_id:
+        raise HTTPException(status_code=400, detail="Ответственного юриста нельзя удалить из чата")
+    if user.role == Role.LAWYER and user.id == lawyer_id:
+        raise HTTPException(status_code=400, detail="Нельзя удалить себя из чата")
+
+    lawyer = next((item for item in legal_case.lawyers if item.id == lawyer_id), None)
+    if lawyer:
+        legal_case.lawyers.remove(lawyer)
+        db.add(
+            Notification(
+                recipient_id=lawyer.id,
+                title="Вы отключены от чата дела",
+                message=f"{legal_case.case_number}: {legal_case.title}",
+            )
+        )
+        log_action(db, user, "Юрист отключен от чата дела", f"{legal_case.case_number}: {lawyer.full_name or lawyer.username}")
+        db.commit()
+
+    if return_to.strip():
+        return RedirectResponse(return_to.strip(), status_code=303)
+    return RedirectResponse(f"/cases/{case_id}?tab=communication#communication-panel", status_code=303)
+
+
 @app.get("/tasks", response_class=HTMLResponse)
 def tasks_page(request: Request, db: Session = Depends(get_db)):
-    user = require_auth(request, db)
-    tasks = db.scalars(select(CaseTask).order_by(CaseTask.due_date, CaseTask.id.desc())).all()
-    cases = db.scalars(select(LegalCase).order_by(LegalCase.case_number)).all()
+    user = require_staff(request, db)
+    if user.role == Role.ADMIN:
+        raise HTTPException(status_code=404, detail="Раздел задач доступен в карточках дел")
+    case_stmt = select(LegalCase).where(LegalCase.intake_approved.is_(True)).order_by(LegalCase.case_number)
+    if user.role == Role.LAWYER:
+        case_stmt = case_stmt.where(case_assignment_condition(user.id))
+    cases = db.scalars(case_stmt).all()
+    cases = [item for item in cases if not item.is_consultation]
+    case_ids = [item.id for item in cases]
+    task_stmt = select(CaseTask).order_by(CaseTask.due_date, CaseTask.id.desc())
+    if case_ids:
+        task_stmt = task_stmt.where(CaseTask.legal_case_id.in_(case_ids))
+    else:
+        task_stmt = task_stmt.where(CaseTask.id == -1)
+    if user.role == Role.LAWYER:
+        task_stmt = task_stmt.where(or_(CaseTask.assignee_id == user.id, CaseTask.assignee_id.is_(None)))
+    tasks = db.scalars(task_stmt).all()
     lawyers = db.scalars(select(User).where(User.role == Role.LAWYER).order_by(User.full_name)).all()
     return templates.TemplateResponse(
         "tasks.html",
@@ -3925,6 +4778,7 @@ def tasks_page(request: Request, db: Session = Depends(get_db)):
             "statuses": list(TaskStatus),
             "user": user,
             "created": request.query_params.get("created") == "1",
+            "deleted": request.query_params.get("deleted") == "1",
             "today": date.today(),
         },
     )
@@ -3943,17 +4797,31 @@ def create_task(
     return_to: str = Form(""),
     db: Session = Depends(get_db),
 ):
-    user = require_auth(request, db)
+    user = require_staff(request, db)
     task_date = parse_iso_date(due_date)
     if not task_date:
         return RedirectResponse("/tasks?error=date", status_code=303)
 
     legal_case = db.get(LegalCase, legal_case_id)
-    if not legal_case:
+    if not legal_case or not legal_case.intake_approved:
         return RedirectResponse("/tasks?error=case", status_code=303)
+    ensure_staff_case_access(user, legal_case)
     if legal_case.is_consultation:
         target = return_to.strip() or "/tasks?error=consultation"
         return RedirectResponse(target, status_code=303)
+
+    assignee_id_value = assignee_id
+    if assignee_id_value:
+        assignee = db.get(User, assignee_id_value)
+        if not assignee or assignee.role != Role.LAWYER:
+            target = return_to.strip() or "/tasks?error=lawyer"
+            return RedirectResponse(target, status_code=303)
+        if assignee.id not in case_team_member_ids(legal_case):
+            if user.role == Role.ADMIN:
+                legal_case.lawyers.append(assignee)
+            else:
+                target = return_to.strip() or "/tasks?error=lawyer"
+                return RedirectResponse(target, status_code=303)
 
     status_value = TaskStatus.TODO
     try:
@@ -3968,7 +4836,7 @@ def create_task(
         due_date=task_date,
         status=status_value,
         priority=priority.strip().upper() or "MEDIUM",
-        assignee_id=assignee_id,
+        assignee_id=assignee_id_value,
     )
     db.add(new_task)
     db.add(
@@ -3992,10 +4860,14 @@ def update_task_status(
     status: str = Form(...),
     db: Session = Depends(get_db),
 ):
-    user = require_auth(request, db)
+    user = require_staff(request, db)
     task = db.get(CaseTask, task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Задача не найдена")
+    if task.legal_case:
+        ensure_staff_case_access(user, task.legal_case)
+    if user.role == Role.LAWYER and task.assignee_id not in {None, user.id}:
+        raise HTTPException(status_code=403, detail="Нет доступа к задаче")
 
     try:
         task.status = TaskStatus(status)
@@ -4016,9 +4888,34 @@ def update_task_status(
     return RedirectResponse("/tasks", status_code=303)
 
 
+@app.post("/tasks/{task_id}/delete")
+def delete_task(
+    task_id: int,
+    request: Request,
+    return_to: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    user = require_staff(request, db)
+    task = db.get(CaseTask, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Задача не найдена")
+    if task.legal_case:
+        ensure_staff_case_access(user, task.legal_case)
+    if user.role == Role.LAWYER and task.assignee_id not in {None, user.id}:
+        raise HTTPException(status_code=403, detail="Нет доступа к задаче")
+
+    task_title = task.title
+    db.delete(task)
+    log_action(db, user, "Удалена задача", task_title)
+    db.commit()
+
+    target = _safe_staff_return_path(return_to, "/tasks")
+    return RedirectResponse(_append_query_flag(target, "deleted"), status_code=303)
+
+
 @app.get("/calendar", response_class=HTMLResponse)
 def calendar_page(request: Request, lawyer_id: int | None = None, db: Session = Depends(get_db)):
-    user = require_auth(request, db)
+    user = require_staff(request, db)
     lawyers = db.scalars(select(User).where(User.role == Role.LAWYER).order_by(User.full_name, User.username)).all()
     selected_lawyer = None
 
@@ -4027,13 +4924,32 @@ def calendar_page(request: Request, lawyer_id: int | None = None, db: Session = 
     elif lawyers:
         selected_lawyer = next((item for item in lawyers if item.id == lawyer_id), lawyers[0])
 
+    legal_case_stmt = select(LegalCase).where(LegalCase.intake_approved.is_(True)).order_by(LegalCase.case_number)
+    if selected_lawyer:
+        legal_case_stmt = legal_case_stmt.where(case_assignment_condition(selected_lawyer.id))
+    legal_cases = db.scalars(legal_case_stmt).all()
+    case_ids = [item.id for item in legal_cases]
+
     stmt = select(CaseTask).order_by(CaseTask.due_date, CaseTask.id)
+    if case_ids:
+        stmt = stmt.where(CaseTask.legal_case_id.in_(case_ids))
+    else:
+        stmt = stmt.where(CaseTask.id == -1)
     if selected_lawyer:
         stmt = stmt.where(CaseTask.assignee_id == selected_lawyer.id)
     tasks = db.scalars(stmt).all()
-    legal_cases = db.scalars(select(LegalCase).order_by(LegalCase.case_number)).all()
     case_map = {item.id: item for item in legal_cases}
-    calendar_events = db.scalars(select(CalendarEvent).order_by(CalendarEvent.starts_at, CalendarEvent.id)).all()
+    event_stmt = select(CalendarEvent).order_by(CalendarEvent.starts_at, CalendarEvent.id)
+    if case_ids:
+        event_stmt = event_stmt.where(
+            or_(
+                CalendarEvent.legal_case_id.in_(case_ids),
+                CalendarEvent.legal_case_id.is_(None),
+            )
+        )
+    else:
+        event_stmt = event_stmt.where(CalendarEvent.legal_case_id.is_(None))
+    calendar_events = db.scalars(event_stmt).all()
 
     events = []
     for task in tasks:
@@ -4090,7 +5006,7 @@ def create_calendar_event(
     return_to: str = Form(""),
     db: Session = Depends(get_db),
 ):
-    user = require_auth(request, db)
+    user = require_staff(request, db)
     clean_title = title.strip()
     event_day = parse_iso_date(event_date)
     if not clean_title or not event_day:
@@ -4108,11 +5024,13 @@ def create_calendar_event(
                 redirect = f"{redirect}&lawyer_id={lawyer_id.strip()}"
             return RedirectResponse(redirect, status_code=303)
         case_id_value = int(raw_case_id)
-        if not db.get(LegalCase, case_id_value):
+        legal_case = db.get(LegalCase, case_id_value)
+        if not legal_case:
             redirect = "/calendar?error=case"
             if lawyer_id.strip().isdigit():
                 redirect = f"{redirect}&lawyer_id={lawyer_id.strip()}"
             return RedirectResponse(redirect, status_code=303)
+        ensure_staff_case_access(user, legal_case)
 
     event_type_value = (event_type or "CUSTOM").strip().upper()
     if event_type_value not in EVENT_TYPE_LABELS:
@@ -4146,10 +5064,11 @@ def create_calendar_event(
 
 @app.get("/cases/{case_id}/workspace")
 def case_workspace(case_id: int, request: Request, db: Session = Depends(get_db)):
-    _ = require_auth(request, db)
+    user = require_staff(request, db)
     legal_case = db.get(LegalCase, case_id)
     if not legal_case:
         raise HTTPException(status_code=404, detail="Дело не найдено")
+    ensure_staff_case_access(user, legal_case)
     return JSONResponse(build_case_workspace(db, legal_case))
 
 
@@ -4162,10 +5081,11 @@ def add_case_comment(
     return_to: str = Form(""),
     db: Session = Depends(get_db),
 ):
-    user = require_auth(request, db)
+    user = require_staff(request, db)
     legal_case = db.get(LegalCase, case_id)
     if not legal_case:
         raise HTTPException(status_code=404, detail="Дело не найдено")
+    ensure_staff_case_access(user, legal_case)
 
     text = message.strip()
     if not text:
@@ -4197,11 +5117,11 @@ def add_case_comment(
 
 @app.get("/kanban", response_class=HTMLResponse)
 def kanban_page(request: Request, db: Session = Depends(get_db)):
-    user = require_auth(request, db)
+    user = require_staff(request, db)
     today = datetime.now().date()
     stmt = select(LegalCase).where(LegalCase.intake_approved.is_(True)).order_by(LegalCase.opened_at.desc(), LegalCase.id.desc())
     if user.role == Role.LAWYER:
-        stmt = stmt.where(LegalCase.responsible_lawyer_id == user.id)
+        stmt = stmt.where(case_assignment_condition(user.id))
     cases = db.scalars(stmt).all()
     lawyers = db.scalars(select(User).where(User.role == Role.LAWYER).order_by(User.full_name, User.username)).all()
     case_insights = build_case_insights(db, cases, lawyers)
@@ -4223,6 +5143,250 @@ def kanban_page(request: Request, db: Session = Depends(get_db)):
     )
 
 
+@app.get("/reports", response_class=HTMLResponse)
+def reports_page(request: Request, db: Session = Depends(get_db)):
+    user = require_admin(request, db)
+    today = date.today()
+    all_cases = db.scalars(select(LegalCase).order_by(LegalCase.opened_at.desc(), LegalCase.id.desc())).all()
+    approved_cases = [item for item in all_cases if item.intake_approved]
+    open_cases = [item for item in approved_cases if item.stage != CaseStage.COMPLETED]
+    completed_cases = [item for item in approved_cases if item.stage == CaseStage.COMPLETED]
+    tasks = db.scalars(select(CaseTask).order_by(CaseTask.due_date.asc(), CaseTask.id.asc())).all()
+    lawyers = db.scalars(select(User).where(User.role == Role.LAWYER).order_by(User.full_name, User.username)).all()
+    case_insights = build_case_insights(db, approved_cases, lawyers)
+
+    all_tasks_open = [item for item in tasks if item.status != TaskStatus.DONE]
+    overdue_tasks = [item for item in all_tasks_open if item.due_date < today]
+    case_ids = [item.id for item in approved_cases]
+    documents = db.scalars(select(CaseDocument).where(CaseDocument.legal_case_id.in_(case_ids))).all() if case_ids else []
+    comments = db.scalars(select(CaseComment).where(CaseComment.legal_case_id.in_(case_ids))).all() if case_ids else []
+    messages = db.scalars(select(ClientChatMessage).where(ClientChatMessage.legal_case_id.in_(case_ids))).all() if case_ids else []
+    audit_logs = db.scalars(
+        select(AuditLog)
+        .where(AuditLog.action == "Завершено дело")
+        .order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
+    ).all()
+
+    documents_by_case: dict[int, list[CaseDocument]] = defaultdict(list)
+    comments_by_case: dict[int, list[CaseComment]] = defaultdict(list)
+    messages_by_case: dict[int, list[ClientChatMessage]] = defaultdict(list)
+    tasks_by_case: dict[int, list[CaseTask]] = defaultdict(list)
+    for item in documents:
+        documents_by_case[item.legal_case_id].append(item)
+    for item in comments:
+        comments_by_case[item.legal_case_id].append(item)
+    for item in messages:
+        if item.legal_case_id:
+            messages_by_case[item.legal_case_id].append(item)
+    for item in tasks:
+        tasks_by_case[item.legal_case_id].append(item)
+
+    completion_log_by_case_number: dict[str, AuditLog] = {}
+    for item in audit_logs:
+        case_number = (item.details or "").split(":", 1)[0].strip()
+        if case_number and case_number not in completion_log_by_case_number:
+            completion_log_by_case_number[case_number] = item
+
+    completion_days: list[int] = []
+    first_action_hours: list[float] = []
+    for legal_case in approved_cases:
+        completion_log = completion_log_by_case_number.get(legal_case.case_number)
+        if completion_log:
+            completion_dt = (_to_local_naive(completion_log.created_at) or completion_log.created_at).date()
+            completion_days.append(max((completion_dt - legal_case.opened_at).days, 0))
+
+        first_action_candidates: list[datetime] = []
+        first_action_candidates.extend(
+            (_to_local_naive(item.created_at) or item.created_at)
+            for item in comments_by_case.get(legal_case.id, [])
+        )
+        first_action_candidates.extend(
+            (_to_local_naive(item.created_at) or item.created_at)
+            for item in documents_by_case.get(legal_case.id, [])
+        )
+        first_action_candidates.extend(
+            (_to_local_naive(item.created_at) or item.created_at)
+            for item in messages_by_case.get(legal_case.id, [])
+            if not item.is_from_client
+        )
+        if first_action_candidates:
+            first_action = min(first_action_candidates)
+            created_dt = _to_local_naive(legal_case.created_at) or legal_case.created_at
+            first_action_hours.append(max((first_action - created_dt).total_seconds() / 3600, 0))
+
+    stage_distribution = []
+    total_approved = len(approved_cases) or 1
+    for stage in CaseStage:
+        count = len([item for item in approved_cases if item.stage == stage])
+        stage_distribution.append(
+            {
+                "label": STAGE_LABELS[stage],
+                "count": count,
+                "share": round((count / total_approved) * 100, 1),
+            }
+        )
+
+    category_distribution = []
+    for category, count in Counter((item.category or "Без категории") for item in approved_cases).most_common(8):
+        category_distribution.append(
+            {
+                "label": category,
+                "count": count,
+                "share": round((count / total_approved) * 100, 1),
+            }
+        )
+
+    priority_distribution = []
+    priority_labels = {"LOW": "Низкий", "MEDIUM": "Средний", "HIGH": "Высокий"}
+    for key in ["HIGH", "MEDIUM", "LOW"]:
+        count = len([item for item in approved_cases if (item.priority or "MEDIUM").upper() == key])
+        priority_distribution.append(
+            {
+                "label": priority_labels[key],
+                "count": count,
+                "share": round((count / total_approved) * 100, 1),
+            }
+        )
+
+    month_labels = []
+    completion_by_month = Counter()
+    month_start = date(today.year, today.month, 1)
+    for offset in range(5, -1, -1):
+        current_month = (month_start.replace(day=15) - timedelta(days=offset * 31)).replace(day=1)
+        month_key = current_month.strftime("%Y-%m")
+        month_labels.append((month_key, current_month.strftime("%m.%Y")))
+    for item in audit_logs:
+        created_local = _to_local_naive(item.created_at) or item.created_at
+        completion_by_month[created_local.strftime("%Y-%m")] += 1
+    completion_dynamics = [
+        {"label": label, "count": completion_by_month.get(key, 0)}
+        for key, label in month_labels
+    ]
+    completion_max = max((item["count"] for item in completion_dynamics), default=0)
+
+    first_case_by_client: dict[int, date] = {}
+    for legal_case in approved_cases:
+        first_case_by_client.setdefault(legal_case.client_id, legal_case.opened_at)
+        if legal_case.opened_at < first_case_by_client[legal_case.client_id]:
+            first_case_by_client[legal_case.client_id] = legal_case.opened_at
+    new_clients_count = len([item for item in first_case_by_client.values() if item >= today - timedelta(days=30)])
+
+    lawyer_rows = []
+    for lawyer in lawyers:
+        lawyer_cases = [item for item in approved_cases if lawyer_assigned_to_case(item, lawyer.id)]
+        lawyer_open_cases = [item for item in lawyer_cases if item.stage != CaseStage.COMPLETED]
+        lawyer_completed = [item for item in lawyer_cases if item.stage == CaseStage.COMPLETED]
+        lawyer_tasks = [item for item in tasks if item.assignee_id == lawyer.id]
+        lawyer_overdue = [item for item in lawyer_tasks if item.status != TaskStatus.DONE and item.due_date < today]
+        lawyer_rows.append(
+            {
+                "name": lawyer.full_name or lawyer.username,
+                "specialization": lawyer.specialization or "Общая практика",
+                "active_cases": len(lawyer_open_cases),
+                "completed_cases": len(lawyer_completed),
+                "open_tasks": len([item for item in lawyer_tasks if item.status != TaskStatus.DONE]),
+                "overdue_tasks": len(lawyer_overdue),
+                "deadline_success_rate": round(float(lawyer.deadline_success_rate or 0), 1),
+                "current_load": lawyer.current_load,
+                "efficiency": round((len(lawyer_completed) / len(lawyer_cases)) * 100, 1) if lawyer_cases else 0.0,
+            }
+        )
+    lawyer_rows.sort(key=lambda item: (-item["active_cases"], -item["open_tasks"], item["name"]))
+
+    return templates.TemplateResponse(
+        "reports.html",
+        {
+            "request": request,
+            "user": user,
+            "today": today,
+            "summary": {
+                "total_cases": len(all_cases),
+                "approved_cases": len(approved_cases),
+                "requests_total": len([item for item in all_cases if not item.intake_approved]),
+                "active_cases": len(open_cases),
+                "closed_cases": len(completed_cases),
+                "overdue_tasks": len(overdue_tasks),
+                "avg_case_days": round(sum(completion_days) / len(completion_days), 1) if completion_days else 0,
+                "avg_first_action_hours": round(sum(first_action_hours) / len(first_action_hours), 1) if first_action_hours else 0,
+                "new_clients_count": new_clients_count,
+                "success_rate": round((len(completed_cases) / len(approved_cases)) * 100, 1) if approved_cases else 0,
+                "documents_count": len(documents),
+            },
+            "stage_distribution": stage_distribution,
+            "category_distribution": category_distribution,
+            "priority_distribution": priority_distribution,
+            "completion_dynamics": completion_dynamics,
+            "completion_max": completion_max,
+            "lawyer_rows": lawyer_rows,
+        },
+    )
+
+
+@app.get("/settings", response_class=HTMLResponse)
+def settings_page(request: Request, preview_category: str = "Договорная работа", db: Session = Depends(get_db)):
+    user = require_admin(request, db)
+    topsis_settings = load_topsis_settings()
+    lawyers = db.scalars(select(User).where(User.role == Role.LAWYER).order_by(User.full_name, User.username)).all()
+    preview_ranking = topsis_rank(preview_category.strip() or "Договорная работа", lawyers)[:5]
+    impact_rows = [
+        {
+            "label": item["label"],
+            "description": item["description"],
+            "mode_label": "Повышает итоговый балл" if item["mode"] == "benefit" else "Сдерживает итоговый балл",
+            "share": round(item["normalized_weight"] * 100, 1),
+            "enabled": item["enabled"],
+        }
+        for item in topsis_settings["criteria"]
+    ]
+    return templates.TemplateResponse(
+        "settings.html",
+        {
+            "request": request,
+            "user": user,
+            "today": date.today(),
+            "saved": request.query_params.get("saved") == "1",
+            "preview_category": preview_category.strip() or "Договорная работа",
+            "topsis_settings": topsis_settings,
+            "impact_rows": impact_rows,
+            "preview_ranking": preview_ranking,
+        },
+    )
+
+
+@app.post("/settings/topsis")
+def update_topsis_settings_route(
+    request: Request,
+    preview_category: str = Form("Договорная работа"),
+    spec_weight: str = Form("0.30"),
+    spec_enabled: str = Form("0"),
+    load_weight: str = Form("0.20"),
+    load_enabled: str = Form("0"),
+    exp_weight: str = Form("0.20"),
+    exp_enabled: str = Form("0"),
+    avg_days_weight: str = Form("0.15"),
+    avg_days_enabled: str = Form("0"),
+    deadline_weight: str = Form("0.15"),
+    deadline_enabled: str = Form("0"),
+    db: Session = Depends(get_db),
+):
+    user = require_admin(request, db)
+    save_topsis_settings(
+        [
+            {"id": "spec", "weight": spec_weight, "enabled": spec_enabled.lower() in {"1", "true", "on", "yes"}},
+            {"id": "load", "weight": load_weight, "enabled": load_enabled.lower() in {"1", "true", "on", "yes"}},
+            {"id": "exp", "weight": exp_weight, "enabled": exp_enabled.lower() in {"1", "true", "on", "yes"}},
+            {"id": "avg_days", "weight": avg_days_weight, "enabled": avg_days_enabled.lower() in {"1", "true", "on", "yes"}},
+            {"id": "deadline", "weight": deadline_weight, "enabled": deadline_enabled.lower() in {"1", "true", "on", "yes"}},
+        ]
+    )
+    log_action(db, user, "Обновлены настройки TOPSIS", "Администратор изменил критерии и веса ранжирования")
+    db.commit()
+    return RedirectResponse(
+        f"/settings?saved=1&preview_category={quote(preview_category.strip() or 'Договорная работа')}",
+        status_code=303,
+    )
+
+
 @app.get("/notifications", response_class=HTMLResponse)
 def notifications_page(request: Request, db: Session = Depends(get_db)):
     user = require_auth(request, db)
@@ -4234,6 +5398,44 @@ def notifications_page(request: Request, db: Session = Depends(get_db)):
     ).all()
     if user.role == Role.LAWYER:
         notifications = [item for item in notifications if not is_finance_related_text(f"{item.title} {item.message}")]
+    feed_items = [
+        {
+            "kind": "notification",
+            "id": item.id,
+            "title": item.title,
+            "message": item.message,
+            "created_at": item.created_at,
+            "is_read": item.is_read,
+            "is_critical": notification_is_critical(item),
+            "action_url": f"/notifications/{item.id}/read",
+            "source": "Уведомление",
+        }
+        for item in notifications
+    ]
+    if user.role == Role.ADMIN:
+        audit_entries = [
+            item
+            for item in db.scalars(select(AuditLog).order_by(AuditLog.created_at.desc(), AuditLog.id.desc()).limit(200)).all()
+            if audit_log_is_case_related(item)
+        ][:80]
+        users_map = {item.id: item for item in db.scalars(select(User)).all()}
+        for item in audit_entries:
+            actor = users_map.get(item.user_id) if item.user_id else None
+            actor_name = (actor.full_name or actor.username) if actor else "Система"
+            feed_items.append(
+                {
+                    "kind": "audit",
+                    "id": item.id,
+                    "title": item.action,
+                    "message": item.details or "Событие по делу или обращению",
+                    "created_at": item.created_at,
+                    "is_read": True,
+                    "is_critical": False,
+                    "action_url": "",
+                    "source": actor_name,
+                }
+            )
+    feed_items.sort(key=lambda item: item["created_at"], reverse=True)
     unread = len([item for item in notifications if not item.is_read])
     critical_count = len([item for item in notifications if notification_is_critical(item)])
     return templates.TemplateResponse(
@@ -4241,6 +5443,7 @@ def notifications_page(request: Request, db: Session = Depends(get_db)):
         {
             "request": request,
             "notifications": notifications,
+            "feed_items": feed_items[:160],
             "unread": unread,
             "critical_count": critical_count,
             "user": user,
@@ -4397,6 +5600,7 @@ def audit_page(request: Request, db: Session = Depends(get_db)):
     user = require_auth(request, db)
     if user.role == Role.LAWYER:
         raise HTTPException(status_code=404, detail="Раздел недоступен")
+    return RedirectResponse("/notifications", status_code=303)
     entries = db.scalars(select(AuditLog).order_by(AuditLog.id.desc()).limit(200)).all()
     users = {item.id: item for item in db.scalars(select(User)).all()}
     action_types = sorted({item.action for item in entries})
@@ -4415,19 +5619,8 @@ def audit_page(request: Request, db: Session = Depends(get_db)):
 
 @app.get("/portal/intake", response_class=HTMLResponse)
 def intake_page(request: Request, db: Session = Depends(get_db)):
-    user = current_user(request, db)
-    if user and user.role == Role.LAWYER:
-        raise HTTPException(status_code=404, detail="Раздел недоступен")
-    return templates.TemplateResponse(
-        "intake.html",
-        {
-            "request": request,
-            "user": user,
-            "show_chat": False,
-            "show_footer": not bool(user),
-            "success": request.query_params.get("success") == "1",
-        },
-    )
+    current_user(request, db)
+    raise HTTPException(status_code=404, detail="Раздел публичной заявки отключен")
 
 
 @app.post("/portal/intake")
@@ -4442,75 +5635,17 @@ def intake_submit(
     documents: list[UploadFile] = File(default=[]),
     db: Session = Depends(get_db),
 ):
-    user = current_user(request, db)
-    if user and user.role == Role.LAWYER:
-        raise HTTPException(status_code=404, detail="Раздел недоступен")
-    client = Client(
-        name=full_name.strip(),
-        client_type="PERSON",
-        email=email.strip().lower(),
-        phone=phone.strip(),
-        notes="Заявка через публичный портал",
-    )
-    db.add(client)
-    db.flush()
-
-    legal_case = LegalCase(
-        case_number=next_case_number(db),
-        title=case_title.strip(),
-        category=category.strip() or "Общее",
-        description=message.strip(),
-        stage=CaseStage.NEW_REQUEST,
-        priority="MEDIUM",
-        intake_approved=False,
-        intake_status="PENDING_REVIEW",
-        opened_at=date.today(),
-        deadline=None,
-        client_id=client.id,
-        responsible_lawyer_id=None,
-    )
-    db.add(legal_case)
-    db.flush()
-
-    valid_documents = [item for item in documents if item and item.filename]
-    for document in valid_documents:
-        original_name, stored_name, mime_type, file_bytes = _store_uploaded_file(document)
-        db.add(
-            CaseDocument(
-                legal_case_id=legal_case.id,
-                uploaded_by_user_id=None,
-                original_filename=original_name,
-                stored_filename=stored_name,
-                mime_type=mime_type,
-                file_size=len(file_bytes),
-                file_content=file_bytes,
-                description="Материалы из публичной заявки",
-            )
-        )
-
-    recipients = db.scalars(select(User).where(User.role == Role.ADMIN)).all()
-    for recipient in recipients:
-        db.add(
-            Notification(
-                recipient_id=recipient.id,
-                title="Новая входящая заявка",
-                message=f"{legal_case.case_number}: {legal_case.title}" + (
-                    f" • файлов: {len(valid_documents)}" if valid_documents else ""
-                ),
-            )
-        )
-
-    log_action(db, user, "Публичная заявка", f"{legal_case.case_number}: {legal_case.title}")
-    db.commit()
-    return RedirectResponse("/portal/intake?success=1", status_code=303)
+    current_user(request, db)
+    raise HTTPException(status_code=404, detail="Раздел публичной заявки отключен")
 
 
 @app.get("/cases/{case_id}/topsis", response_class=HTMLResponse)
 def topsis_page(case_id: int, request: Request, db: Session = Depends(get_db)):
-    user = require_auth(request, db)
+    user = require_staff(request, db)
     legal_case = db.get(LegalCase, case_id)
     if not legal_case:
         raise HTTPException(status_code=404, detail="Дело не найдено")
+    ensure_staff_case_access(user, legal_case)
     lawyers = db.scalars(select(User).where(User.role == Role.LAWYER)).all()
     ranking = topsis_rank(legal_case.category, lawyers)
     return templates.TemplateResponse(

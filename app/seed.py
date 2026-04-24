@@ -535,7 +535,7 @@ def _ensure_demo_board_data(db) -> None:
                     CaseComment(
                         legal_case_id=legal_case.id,
                         user_id=payload["responsible_lawyer"].id,
-                        message="Нужно держать под контролем ближайший дедлайн и комплект документов.",
+                        message="Нужно держать под контролем ближайший срок выполнения и комплект документов.",
                         is_internal=True,
                     ),
                 ]
@@ -550,7 +550,6 @@ def seed_data() -> dict[str, str]:
         create_schema()
         existing_admin = db.scalar(select(User).where(User.role == Role.ADMIN))
         if existing_admin:
-            _ensure_demo_board_data(db)
             return {
                 "admin_username": existing_admin.username,
                 "admin_password": "(уже существует)"
@@ -595,7 +594,6 @@ def seed_data() -> dict[str, str]:
         db.flush()
 
         db.commit()
-        _ensure_demo_board_data(db)
         return {
             "admin_username": admin_username,
             "admin_password": admin_password,
@@ -613,3 +611,4 @@ if __name__ == "__main__":
     print("Демо-данные созданы")
     for k, v in creds.items():
         print(f"{k}: {v}")
+

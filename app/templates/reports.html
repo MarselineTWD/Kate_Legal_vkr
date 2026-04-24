@@ -1,0 +1,181 @@
+{% extends "base.html" %}
+{% block title %}Отчетность{% endblock %}
+{% block content %}
+<section class="portal-page">
+  <div class="portal-page__header">
+    <div>
+      <div class="portal-page__eyebrow">Управленческая аналитика</div>
+      <h1 class="portal-page__title">Отчетность по работе юридической системы</h1>
+      <p class="portal-page__intro">
+        Сводный контур по делам, обращениям, срокам, загрузке команды и качеству обработки. Все показатели собраны в одном управленческом экране.
+      </p>
+    </div>
+  </div>
+
+  <div class="ops-kpi-grid ops-kpi-grid--5">
+    <article class="ops-kpi-card">
+      <div class="ops-kpi-card__icon ops-kpi-card__icon--navy"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-briefcase"></use></svg></div>
+      <div class="ops-kpi-card__content"><span>Всего карточек</span><strong>{{ summary.total_cases }}</strong><small>Дела и обращения в системе</small></div>
+    </article>
+    <article class="ops-kpi-card">
+      <div class="ops-kpi-card__icon ops-kpi-card__icon--brand"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-layout-grid"></use></svg></div>
+      <div class="ops-kpi-card__content"><span>Активные дела</span><strong>{{ summary.active_cases }}</strong><small>Открытые карточки, остающиеся в работе</small></div>
+    </article>
+    <article class="ops-kpi-card">
+      <div class="ops-kpi-card__icon ops-kpi-card__icon--warning"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-check-square"></use></svg></div>
+      <div class="ops-kpi-card__content"><span>Просроченные задачи</span><strong>{{ summary.overdue_tasks }}</strong><small>Исполнительский контур с пропущенными сроками</small></div>
+    </article>
+    <article class="ops-kpi-card">
+      <div class="ops-kpi-card__icon ops-kpi-card__icon--info"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-activity"></use></svg></div>
+      <div class="ops-kpi-card__content"><span>Успешно завершено</span><strong>{{ summary.success_rate }}%</strong><small>Доля завершенных дел среди принятых в работу</small></div>
+    </article>
+  </div>
+
+  <div class="analytics-grid analytics-grid--top">
+    <article class="portal-card portal-card--panel">
+      <div class="portal-card__head">
+        <div>
+          <div class="portal-card__eyebrow">Ключевые показатели</div>
+          <h2 class="portal-card__title">Управленческий срез</h2>
+        </div>
+      </div>
+      <div class="analytics-metric-grid">
+        <div class="analytics-metric-card"><span>Закрытые дела</span><strong>{{ summary.closed_cases }}</strong></div>
+        <div class="analytics-metric-card"><span>Новые клиенты за 30 дней</span><strong>{{ summary.new_clients_count }}</strong></div>
+        <div class="analytics-metric-card"><span>Новые обращения</span><strong>{{ summary.requests_total }}</strong></div>
+        <div class="analytics-metric-card"><span>Средний срок прохождения</span><strong>{{ summary.avg_case_days }} дн.</strong></div>
+        <div class="analytics-metric-card"><span>Среднее время первого действия</span><strong>{{ summary.avg_first_action_hours }} ч</strong></div>
+        <div class="analytics-metric-card"><span>Документы в делах</span><strong>{{ summary.documents_count }}</strong></div>
+      </div>
+    </article>
+
+    <article class="portal-card portal-card--panel">
+      <div class="portal-card__head">
+        <div>
+          <div class="portal-card__eyebrow">Стадии</div>
+          <h2 class="portal-card__title">Распределение дел по стадиям</h2>
+        </div>
+      </div>
+      <div class="analytics-bars">
+        {% for item in stage_distribution %}
+        <div class="analytics-bar">
+          <div class="analytics-bar__head">
+            <strong>{{ item.label }}</strong>
+            <span>{{ item.count }} • {{ item.share }}%</span>
+          </div>
+          <div class="analytics-bar__track"><div class="analytics-bar__value" style="width: {{ item.share }}%;"></div></div>
+        </div>
+        {% endfor %}
+      </div>
+    </article>
+  </div>
+
+  <div class="analytics-grid analytics-grid--split">
+    <article class="portal-card portal-card--panel">
+      <div class="portal-card__head">
+        <div>
+          <div class="portal-card__eyebrow">Категории</div>
+          <h2 class="portal-card__title">Распределение по категориям</h2>
+        </div>
+      </div>
+      <div class="analytics-bars">
+        {% for item in category_distribution %}
+        <div class="analytics-bar">
+          <div class="analytics-bar__head">
+            <strong>{{ item.label }}</strong>
+            <span>{{ item.count }} • {{ item.share }}%</span>
+          </div>
+          <div class="analytics-bar__track analytics-bar__track--soft"><div class="analytics-bar__value analytics-bar__value--soft" style="width: {{ item.share }}%;"></div></div>
+        </div>
+        {% endfor %}
+      </div>
+    </article>
+
+    <article class="portal-card portal-card--panel">
+      <div class="portal-card__head">
+        <div>
+          <div class="portal-card__eyebrow">Приоритеты</div>
+          <h2 class="portal-card__title">Распределение по приоритетам</h2>
+        </div>
+      </div>
+      <div class="analytics-bars">
+        {% for item in priority_distribution %}
+        <div class="analytics-bar">
+          <div class="analytics-bar__head">
+            <strong>{{ item.label }}</strong>
+            <span>{{ item.count }} • {{ item.share }}%</span>
+          </div>
+          <div class="analytics-bar__track"><div class="analytics-bar__value" style="width: {{ item.share }}%;"></div></div>
+        </div>
+        {% endfor %}
+      </div>
+    </article>
+  </div>
+
+  <div class="analytics-grid analytics-grid--split">
+    <article class="portal-card portal-card--panel">
+      <div class="portal-card__head">
+        <div>
+          <div class="portal-card__eyebrow">Динамика</div>
+          <h2 class="portal-card__title">Завершение дел по месяцам</h2>
+        </div>
+      </div>
+      <div class="analytics-bars analytics-bars--compact">
+        {% for item in completion_dynamics %}
+        <div class="analytics-bar">
+          <div class="analytics-bar__head">
+            <strong>{{ item.label }}</strong>
+            <span>{{ item.count }}</span>
+          </div>
+          <div class="analytics-bar__track"><div class="analytics-bar__value" style="width: {{ (item.count * 100 / completion_max) if item.count and completion_max else 0 }}%;"></div></div>
+        </div>
+        {% endfor %}
+      </div>
+    </article>
+
+    <article class="portal-card portal-card--panel">
+      <div class="portal-card__head">
+        <div>
+          <div class="portal-card__eyebrow">Команда</div>
+          <h2 class="portal-card__title">Эффективность и загрузка юристов</h2>
+        </div>
+      </div>
+      <div class="analytics-table-shell">
+        <table class="ops-table analytics-table">
+          <thead>
+            <tr>
+              <th>Юрист</th>
+              <th>Активные дела</th>
+              <th>Завершено</th>
+              <th>Открытые задачи</th>
+              <th>Просрочено</th>
+              <th>Соблюдение сроков</th>
+              <th>Текущая загрузка</th>
+              <th>Эффективность</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in lawyer_rows %}
+            <tr>
+              <td>
+                <div class="ops-table__primary">
+                  <strong>{{ item.name }}</strong>
+                  <span class="ops-table__secondary">{{ item.specialization }}</span>
+                </div>
+              </td>
+              <td>{{ item.active_cases }}</td>
+              <td>{{ item.completed_cases }}</td>
+              <td>{{ item.open_tasks }}</td>
+              <td>{{ item.overdue_tasks }}</td>
+              <td>{{ item.deadline_success_rate }}%</td>
+              <td>{{ item.current_load }}</td>
+              <td>{{ item.efficiency }}%</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </article>
+  </div>
+</section>
+{% endblock %}

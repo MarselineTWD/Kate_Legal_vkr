@@ -1,0 +1,30 @@
+{
+  "criteria": [
+    {
+      "id": "spec",
+      "enabled": true,
+      "weight": 0.3
+    },
+    {
+      "id": "load",
+      "enabled": true,
+      "weight": 0.2
+    },
+    {
+      "id": "exp",
+      "enabled": true,
+      "weight": 0.2
+    },
+    {
+      "id": "avg_days",
+      "enabled": true,
+      "weight": 0.15
+    },
+    {
+      "id": "deadline",
+      "enabled": true,
+      "weight": 0.15
+    }
+  ],
+  "updated_at": "2026-04-24T13:23:51.663761"
+}

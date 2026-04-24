@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+{% block title %}Настройки{% endblock %}
+{% block content %}
+<section class="portal-page">
+  {% if saved %}
+  <div class="portal-alert portal-alert--success">
+    <strong>Настройки TOPSIS обновлены.</strong>
+    <span>Новые веса и критерии сразу используются при подборе юристов по обращениям и делам.</span>
+  </div>
+  {% endif %}
+
+  <div class="portal-page__header">
+    <div>
+      <div class="portal-page__eyebrow">Системные настройки</div>
+      <h1 class="portal-page__title">Управление логикой подбора юристов</h1>
+      <p class="portal-page__intro">
+        Раздел описывает и настраивает TOPSIS-модель, по которой система ранжирует юристов под конкретную категорию дела. Здесь можно изменять критерии, их веса и видеть, как они влияют на итоговую рекомендацию.
+      </p>
+    </div>
+  </div>
+
+  <div class="settings-intro-grid">
+    <article class="portal-card portal-card--panel settings-note-card">
+      <div class="portal-card__head">
+        <div>
+          <div class="portal-card__eyebrow">Что это</div>
+          <h2 class="portal-card__title">TOPSIS в юридической системе</h2>
+        </div>
+      </div>
+      <p class="ops-summary">
+        TOPSIS — это метод многокритериального выбора. Система сравнивает юристов по нескольким параметрам и определяет, кто ближе всего к “идеальному” исполнителю для конкретного дела.
+      </p>
+    </article>
+
+    <article class="portal-card portal-card--panel settings-note-card">
+      <div class="portal-card__head">
+        <div>
+          <div class="portal-card__eyebrow">Как работает</div>
+          <h2 class="portal-card__title">Логика расчета</h2>
+        </div>
+      </div>
+      <div class="settings-steps">
+        <div class="settings-step"><strong>1.</strong><span>Система берет активные критерии и их веса.</span></div>
+        <div class="settings-step"><strong>2.</strong><span>Сравнивает юристов по специализации, нагрузке, опыту, срокам и стабильности исполнения.</span></div>
+        <div class="settings-step"><strong>3.</strong><span>Формирует итоговый рейтинг и предлагает лучших кандидатов для назначения.</span></div>
+      </div>
+    </article>
+
+    <article class="portal-card portal-card--panel settings-note-card">
+      <div class="portal-card__head">
+        <div>
+          <div class="portal-card__eyebrow">Где применяется</div>
+          <h2 class="portal-card__title">Точки использования</h2>
+        </div>
+      </div>
+      <div class="ops-data-list">
+        <article class="ops-data-list__item">
+          <strong>Принятие обращений</strong>
+          <p>При первичном рассмотрении система предлагает рекомендуемого юриста и команду для нового обращения.</p>
+        </article>
+        <article class="ops-data-list__item">
+          <strong>Операционное ведение дел</strong>
+          <p>В карточке дела рекомендации помогают быстро выбрать подходящего исполнителя без ручного перебора команды.</p>
+        </article>
+      </div>
+    </article>
+  </div>
+
+  <form method="post" action="/settings/topsis" class="settings-grid">
+    <article class="portal-card portal-card--panel settings-card">
+      <div class="portal-card__head">
+        <div>
+          <div class="portal-card__eyebrow">Параметры TOPSIS</div>
+          <h2 class="portal-card__title">Критерии, веса и приоритеты</h2>
+        </div>
+        <div class="ops-inline-meta">
+          <span>Активных критериев: {{ topsis_settings.criteria|selectattr('enabled')|list|length }}</span>
+          {% if topsis_settings.updated_at %}
+          <span>Последнее обновление: {{ topsis_settings.updated_at[:16].replace('T', ' ') }}</span>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="settings-criteria-list">
+        {% for item in topsis_settings.criteria %}
+        <article class="settings-criterion">
+          <div class="settings-criterion__main">
+            <div class="settings-criterion__top">
+              <label class="settings-toggle">
+                <input type="checkbox" name="{{ item.id }}_enabled" value="1" {% if item.enabled %}checked{% endif %} />
+                <span>Учитывать критерий</span>
+              </label>
+              <span class="workspace-badge {% if item.enabled %}workspace-badge--low{% else %}workspace-badge--medium{% endif %}">
+                {{ 'Активен' if item.enabled else 'Отключен' }}
+              </span>
+            </div>
+            <strong>{{ item.label }}</strong>
+            <p>{{ item.description }}</p>
+            <div class="ops-inline-meta">
+              <span>{{ 'Усиливает итоговую рекомендацию' if item.mode == 'benefit' else 'Чем ниже значение, тем выше приоритет' }}</span>
+              <span>Текущая доля: {{ item.normalized_weight * 100 }}%</span>
+            </div>
+          </div>
+          <label class="portal-field settings-criterion__weight">
+            <span>Вес</span>
+            <input class="portal-control" type="number" min="0" max="1" step="0.05" name="{{ item.id }}_weight" value="{{ item.weight }}" />
+            <small>Вес задает влияние критерия на итоговый рейтинг.</small>
+          </label>
+        </article>
+        {% endfor %}
+      </div>
+
+      <div class="portal-form__footer portal-form__footer--split">
+        <label class="portal-field settings-preview-field">
+          <span>Категория для предпросмотра</span>
+          <input class="portal-control" type="text" name="preview_category" value="{{ preview_category }}" />
+          <small>Введите рабочую категорию дела, чтобы увидеть, как текущие настройки влияют на подбор юристов.</small>
+        </label>
+        <button type="submit" class="portal-button portal-button--primary">Сохранить настройки</button>
+      </div>
+    </article>
+
+    <div class="settings-side-column">
+      <article class="portal-card portal-card--panel settings-card">
+        <div class="portal-card__head">
+          <div>
+            <div class="portal-card__eyebrow">Влияние критериев</div>
+            <h2 class="portal-card__title">Как настройки меняют результат</h2>
+          </div>
+        </div>
+        <div class="analytics-bars">
+          {% for item in impact_rows %}
+          <div class="analytics-bar">
+            <div class="analytics-bar__head">
+              <strong>{{ item.label }}</strong>
+              <span>{{ item.share }}%</span>
+            </div>
+            <div class="analytics-bar__track analytics-bar__track--soft">
+              <div class="analytics-bar__value analytics-bar__value--soft" style="width: {{ item.share }}%;"></div>
+            </div>
+            <div class="ops-inline-meta">
+              <span>{{ item.mode_label }}</span>
+              <span>{{ 'Включен' if item.enabled else 'Отключен' }}</span>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </article>
+
+      <article class="portal-card portal-card--panel settings-card">
+        <div class="portal-card__head">
+          <div>
+            <div class="portal-card__eyebrow">Предпросмотр подбора</div>
+            <h2 class="portal-card__title">Рейтинг юристов по текущим правилам</h2>
+          </div>
+        </div>
+        <div class="ops-inline-meta">
+          <span>Категория: {{ preview_category }}</span>
+          <span>Показаны лучшие кандидаты</span>
+        </div>
+        <div class="ops-data-list">
+          {% for item in preview_ranking %}
+          <article class="ops-data-list__item">
+            <div class="ops-inline-meta">
+              <strong>{{ loop.index }}. {{ item.user.full_name or item.user.username }}</strong>
+              <span class="workspace-badge workspace-badge--low">{{ '%.4f'|format(item.score) }}</span>
+            </div>
+            <p>
+              {{ item.user.specialization or 'Общая практика' }}.
+              Текущая нагрузка: {{ item.user.current_load }}.
+              Похожих дел: {{ item.user.similar_cases_experience }}.
+              Успешность по срокам: {{ item.user.deadline_success_rate }}%.
+            </p>
+          </article>
+          {% else %}
+          <div class="portal-empty portal-empty--compact">
+            <h3>Недостаточно данных для предпросмотра</h3>
+            <p>Добавьте юристов или скорректируйте категорию, чтобы увидеть ранжирование.</p>
+          </div>
+          {% endfor %}
+        </div>
+      </article>
+    </div>
+  </form>
+</section>
+{% endblock %}

@@ -7,7 +7,7 @@
       <div class="portal-page__eyebrow">Сообщения / чат</div>
       <h1 class="portal-page__title">Коммуникация с юристом</h1>
       <p class="portal-page__intro">
-        Выберите дело, чтобы продолжить переписку, сверить дедлайны и быстро перейти к документам по этому кейсу.
+        Выберите дело, чтобы продолжить переписку, сверить сроки выполнения и быстро перейти к документам по этому кейсу.
       </p>
     </div>
   </div>
@@ -67,7 +67,7 @@
             {% if chat.last_message %}
               {{ chat.last_message[:84] }}
             {% elif c.deadline %}
-              Дедлайн {{ c.deadline.strftime('%d.%m.%Y') }}
+              Срок выполнения {{ c.deadline.strftime('%d.%m.%Y') }}
             {% else %}
               Сообщений пока нет
             {% endif %}
@@ -172,7 +172,7 @@
             </strong>
           </div>
           <div class="detail-list__row">
-            <span>Дедлайн</span>
+            <span>Срок выполнения</span>
             <strong>{{ selected_case.deadline.strftime('%d.%m.%Y') if selected_case.deadline else 'Не назначен' }}</strong>
           </div>
           <div class="detail-list__row">
@@ -208,7 +208,7 @@
           {% else %}
           <div class="portal-empty portal-empty--compact">
             <h3>Нет активных задач</h3>
-            <p>По выбранному делу сейчас нет открытых задач с дедлайном.</p>
+            <p>По выбранному делу сейчас нет открытых задач со сроком выполнения.</p>
           </div>
           {% endfor %}
         </div>

@@ -1,6 +1,7 @@
 ﻿{% extends "base.html" %}
 {% block title %}Профиль клиента{% endblock %}
 {% block content %}
+{% set client_type_value = (client.client_type if client else 'PERSON') %}
 <section class="portal-page">
   <div class="portal-page__header">
     <div>
@@ -25,7 +26,7 @@
   </div>
   {% elif error == 'email_exists' %}
   <div class="portal-alert portal-alert--warning">
-    <strong>Email уже используется.</strong>
+    <strong>Электронная почта уже используется.</strong>
     <span>Укажите другой адрес, который еще не привязан к другому пользователю.</span>
   </div>
   {% elif password_saved %}
@@ -60,18 +61,18 @@
 
           <div class="portal-form-grid portal-form-grid--2">
             <label class="portal-field">
-              <span>ФИО / организация</span>
+              <span data-profile-name-label>{% if client_type_value == 'ORGANIZATION' %}Организация{% else %}ФИО{% endif %}</span>
               <input class="portal-control" type="text" name="name" value="{{ client.name if client else user.full_name }}" required readonly data-profile-field />
             </label>
             <label class="portal-field">
               <span>Тип клиента</span>
-              <select class="portal-control" name="client_type" disabled data-profile-field>
+              <select class="portal-control" name="client_type" disabled data-profile-field data-client-type-select>
                 <option value="PERSON" {% if (client.client_type if client else 'PERSON') == 'PERSON' %}selected{% endif %}>Физлицо</option>
                 <option value="ORGANIZATION" {% if (client.client_type if client else 'PERSON') == 'ORGANIZATION' %}selected{% endif %}>Юрлицо</option>
               </select>
             </label>
             <label class="portal-field">
-              <span>Email</span>
+              <span>Электронная почта</span>
               <input class="portal-control" type="email" name="email" value="{{ client.email if client else user.email }}" required readonly data-profile-field />
             </label>
             <label class="portal-field">
@@ -80,7 +81,7 @@
             </label>
             <label class="portal-field">
               <span>Адрес</span>
-              <input class="portal-control" type="text" name="address" value="{{ client.address if client else '' }}" readonly data-profile-field />
+              <input class="portal-control portal-control--tall" type="text" name="address" value="{{ client.address if client else '' }}" readonly data-profile-field />
             </label>
             <label class="portal-field portal-field--span-2">
               <span>Описание вашей проблемы / запроса</span>
@@ -89,12 +90,12 @@
           </div>
         </div>
 
-        <div class="portal-form__section">
+        <div class="portal-form__section" data-profile-section="ORGANIZATION"{% if client_type_value != 'ORGANIZATION' %} hidden style="display: none;" aria-hidden="true"{% endif %}>
           <div class="portal-form__section-head">
             <span class="portal-step">2</span>
             <div>
-              <h3>Реквизиты</h3>
-              <p>Заполните отдельные поля, чтобы ускорить подготовку документов.</p>
+              <h3>Реквизиты организации</h3>
+              <p>Для юридического лица доступны все реквизиты, используемые в документах и счетах.</p>
             </div>
           </div>
 
@@ -112,7 +113,7 @@
               <textarea class="portal-control portal-control--textarea" name="bank_details" rows="3" placeholder="БИК, р/с, к/с, наименование банка" readonly data-profile-field>{{ client.bank_details if client else '' }}</textarea>
             </label>
             <label class="portal-field">
-              <span>Паспортные данные</span>
+              <span>Паспортные данные представителя</span>
               <textarea class="portal-control portal-control--textarea" name="passport_details" rows="3" placeholder="Серия, номер, кем и когда выдан" readonly data-profile-field>{{ client.passport_details if client else '' }}</textarea>
             </label>
           </div>
@@ -124,18 +125,50 @@
             </label>
           </div>
         </div>
+        <div class="portal-form__section" data-profile-section="PERSON"{% if client_type_value == 'ORGANIZATION' %} hidden style="display: none;" aria-hidden="true"{% endif %}>
+          <div class="portal-form__section-head">
+            <span class="portal-step">2</span>
+            <div>
+              <h3>Данные физлица</h3>
+              <p>Для физического лица показываются персональные сведения и паспортные данные.</p>
+            </div>
+          </div>
+
+          <div class="portal-form-grid portal-form-grid--2">
+            <label class="portal-field portal-field--span-2">
+              <span>Паспортные данные</span>
+              <textarea class="portal-control portal-control--textarea" name="passport_details" rows="3" placeholder="Серия, номер, кем и когда выдан" readonly data-profile-field>{{ client.passport_details if client else '' }}</textarea>
+            </label>
+          </div>
+
+          <div class="portal-form-grid">
+            <label class="portal-field">
+              <span>Иные сведения</span>
+              <textarea class="portal-control portal-control--textarea" name="other_details" rows="2" placeholder="Дополнительные сведения" readonly data-profile-field>{{ client.other_details if client else '' }}</textarea>
+            </label>
+          </div>
+        </div>
 
         <div class="portal-form__footer portal-form__footer--profile">
           <button type="button" class="portal-button portal-button--secondary" data-profile-edit-toggle>Редактировать</button>
-          <button type="button" class="portal-button portal-button--ghost" data-password-toggle>Сменить пароль</button>
           <div class="portal-form__actions" data-profile-edit-actions hidden aria-hidden="true" style="display: none;">
             <button type="button" class="portal-button portal-button--ghost" data-profile-edit-cancel>Отменить изменения</button>
             <button type="submit" class="portal-button portal-button--primary" data-profile-submit>Сохранить изменения</button>
           </div>
         </div>
       </form>
+    </article>
 
-      <form method="post" action="/client/profile/password" class="portal-form" data-password-form hidden>
+    <article class="portal-card portal-card--panel portal-card--span-2">
+      <div class="portal-card__head">
+        <div>
+          <div class="portal-card__eyebrow">Безопасность</div>
+          <h2 class="portal-card__title">Смена пароля</h2>
+        </div>
+        <button type="button" class="portal-button portal-button--ghost" data-password-toggle>Сменить пароль</button>
+      </div>
+
+      <form method="post" action="/client/profile/password" class="portal-form" data-password-form hidden style="display: none;" aria-hidden="true">
         <div class="portal-form__section">
           <div class="portal-form__section-head">
             <span class="portal-step">3</span>
@@ -221,7 +254,23 @@
       const editActions = profileForm.querySelector('[data-profile-edit-actions]');
       const cancelButton = profileForm.querySelector('[data-profile-edit-cancel]');
       const submitButton = profileForm.querySelector('[data-profile-submit]');
+      const clientTypeSelect = profileForm.querySelector('[data-client-type-select]');
+      const nameLabel = profileForm.querySelector('[data-profile-name-label]');
+      const profileSections = Array.from(profileForm.querySelectorAll('[data-profile-section]'));
       const initialValues = new Map(fields.map((field) => [field.name, field.value]));
+
+      const syncClientTypeSections = (value) => {
+        const clientType = value === 'ORGANIZATION' ? 'ORGANIZATION' : 'PERSON';
+        if (nameLabel) {
+          nameLabel.textContent = clientType === 'ORGANIZATION' ? 'Организация' : 'ФИО';
+        }
+        profileSections.forEach((section) => {
+          const isActive = section.dataset.profileSection === clientType;
+          section.hidden = !isActive;
+          section.style.display = isActive ? '' : 'none';
+          section.setAttribute('aria-hidden', String(!isActive));
+        });
+      };
 
       const setReadOnlyState = (isReadOnly) => {
         fields.forEach((field) => {
@@ -246,6 +295,12 @@
         if (submitButton) submitButton.disabled = isReadOnly;
       };
 
+      if (clientTypeSelect) {
+        clientTypeSelect.addEventListener('change', () => {
+          syncClientTypeSections(clientTypeSelect.value);
+        });
+      }
+
       if (editButton) {
         editButton.addEventListener('click', () => setReadOnlyState(false));
       }
@@ -259,26 +314,41 @@
           document.querySelectorAll('[data-digits-group]').forEach((input) => {
             input.value = formatDigitsGroup(input.value, input.dataset.digitsGroup);
           });
+          if (clientTypeSelect) {
+            syncClientTypeSections(clientTypeSelect.value);
+          }
           setReadOnlyState(true);
         });
       }
 
+      if (clientTypeSelect) {
+        syncClientTypeSections(clientTypeSelect.value);
+      }
       setReadOnlyState(true);
     }
 
     const passwordToggle = document.querySelector('[data-password-toggle]');
     const passwordForm = document.querySelector('[data-password-form]');
     if (passwordToggle && passwordForm) {
-      passwordToggle.addEventListener('click', () => {
-        const hidden = passwordForm.hasAttribute('hidden');
-        if (hidden) {
+      const setPasswordFormState = (isVisible) => {
+        if (isVisible) {
           passwordForm.removeAttribute('hidden');
+          passwordForm.style.display = '';
+          passwordForm.setAttribute('aria-hidden', 'false');
           passwordToggle.textContent = 'Скрыть смену пароля';
           return;
         }
         passwordForm.setAttribute('hidden', 'hidden');
+        passwordForm.style.display = 'none';
+        passwordForm.setAttribute('aria-hidden', 'true');
         passwordToggle.textContent = 'Сменить пароль';
+      };
+
+      passwordToggle.addEventListener('click', () => {
+        setPasswordFormState(passwordForm.hasAttribute('hidden'));
       });
+
+      setPasswordFormState(false);
     }
   })();
 </script>

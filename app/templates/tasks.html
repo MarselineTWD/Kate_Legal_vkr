@@ -23,16 +23,21 @@
   {% if created %}
   <div class="portal-alert portal-alert--success">
     <strong>Задача создана.</strong>
-    <span>Новый элемент появился в task center и доступен в списке и board-режиме.</span>
+    <span>Новый элемент появился в центре задач и доступен в списке и в режиме доски.</span>
+  </div>
+  {% elif deleted %}
+  <div class="portal-alert portal-alert--success">
+    <strong>Задача удалена.</strong>
+    <span>Элемент удален из списка задач и рабочего контура.</span>
   </div>
   {% endif %}
 
   <div class="portal-page__header">
     <div>
-      <div class="portal-page__eyebrow">Task center</div>
+      <div class="portal-page__eyebrow">Центр задач</div>
       <h1 class="portal-page__title">Задачи и исполнительский контроль</h1>
       <p class="portal-page__intro">
-        Единый центр управления задачами по делам: плотный список для быстрого сканирования, board view для контроля статусов и акцент на просрочку без визуального шума.
+        Единый центр управления задачами по делам: плотный список для быстрого просмотра, режим доски для контроля статусов и акцент на просроченные задачи без визуального шума.
       </p>
     </div>
     <div class="portal-actions">
@@ -70,7 +75,7 @@
     <summary>
       <div class="ops-disclosure__summary-copy">
         <strong>Создать задачу</strong>
-        <span>Добавление новой задачи вынесено в раскрываемый блок, чтобы task center оставался сфокусированным на текущем исполнении.</span>
+        <span>Добавление новой задачи вынесено в раскрываемый блок, чтобы раздел задач оставался сфокусированным на текущем исполнении.</span>
       </div>
       <span class="ops-disclosure__summary-icon">
         <span>Открыть форму</span>
@@ -127,7 +132,7 @@
           </label>
         </div>
         <div class="portal-form__footer portal-form__footer--split">
-          <div class="portal-form__note">После сохранения задача попадет в список, board view и календарный контур сроков.</div>
+          <div class="portal-form__note">После сохранения задача попадет в список, в режим доски и в календарный контур сроков.</div>
           <button type="submit" class="portal-button portal-button--primary">Сохранить задачу</button>
         </div>
       </form>
@@ -137,17 +142,17 @@
   <div class="ops-toolbar" data-list-filter-root data-view-root data-default-view="list">
     <div class="ops-toolbar__header">
       <div>
-        <h2 class="ops-toolbar__title">Task center</h2>
-        <p class="ops-toolbar__subtitle">Фильтры работают одновременно для list view и board view.</p>
+        <h2 class="ops-toolbar__title">Центр задач</h2>
+        <p class="ops-toolbar__subtitle">Фильтры работают одновременно для режима списка и режима доски.</p>
       </div>
       <div class="ops-view-switch">
         <button type="button" class="ops-view-button" data-view-button="list">
           <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-list"></use></svg>
-          <span>List view</span>
+          <span>Список</span>
         </button>
         <button type="button" class="ops-view-button" data-view-button="board">
           <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-columns"></use></svg>
-          <span>Board view</span>
+          <span>Доска</span>
         </button>
       </div>
     </div>
@@ -225,6 +230,10 @@
             </select>
             <button type="submit">Обновить</button>
           </form>
+          <form method="post" action="/tasks/{{ task.id }}/delete" data-confirm-form data-confirm-title="Удалить задачу?" data-confirm-text="Задача будет удалена из списка, доски и календарного контура.">
+            <input type="hidden" name="return_to" value="/tasks" />
+            <button type="submit" class="portal-button portal-button--danger-ghost">Удалить</button>
+          </form>
         </div>
       </article>
       {% else %}
@@ -270,9 +279,15 @@
           {% if task.description %}
           <p class="ops-task-card__desc">{{ task.description }}</p>
           {% endif %}
-          {% if task.legal_case %}
-          <a href="/cases/{{ task.legal_case.id }}" class="portal-button portal-button--ghost">Открыть дело</a>
-          {% endif %}
+          <div class="ops-inline-actions">
+            {% if task.legal_case %}
+            <a href="/cases/{{ task.legal_case.id }}" class="portal-button portal-button--ghost">Открыть дело</a>
+            {% endif %}
+            <form method="post" action="/tasks/{{ task.id }}/delete" data-confirm-form data-confirm-title="Удалить задачу?" data-confirm-text="Задача будет удалена из списка, доски и календарного контура.">
+              <input type="hidden" name="return_to" value="/tasks" />
+              <button type="submit" class="portal-button portal-button--danger-ghost">Удалить</button>
+            </form>
+          </div>
         </article>
         {% else %}
         <div class="ops-state-note">В этом статусе пока нет задач.</div>

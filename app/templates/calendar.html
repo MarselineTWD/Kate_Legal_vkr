@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Календарь дедлайнов{% endblock %}
+{% block title %}Календарь сроков выполнения{% endblock %}
 {% block content %}
 {% set metrics = namespace(upcoming=0, hearings=0, overdue=0, meetings=0) %}
 {% set today_iso = today.isoformat() %}
@@ -28,10 +28,10 @@
 
   <div class="portal-page__header">
     <div>
-      <div class="portal-page__eyebrow">Deadline calendar</div>
-      <h1 class="portal-page__title">Календарь дедлайнов и юридических событий</h1>
+      <div class="portal-page__eyebrow">Календарь сроков</div>
+      <h1 class="portal-page__title">Календарь сроков выполнения и юридических событий</h1>
       <p class="portal-page__intro">
-        Премиальный календарный контур для контроля сроков, заседаний, встреч, внутренних дедлайнов и коммуникаций с клиентами без ощущения старого административного календаря.
+        Премиальный календарный контур для контроля сроков, заседаний, встреч, внутренних сроков выполнения и коммуникаций с клиентами без ощущения старого административного календаря.
       </p>
     </div>
     <div class="portal-actions">
@@ -45,10 +45,7 @@
         <button type="submit">Показать юриста</button>
       </form>
       {% endif %}
-      <a href="#calendar-create" class="portal-button portal-button--primary">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-plus-square"></use></svg>
-        <span>Новое событие</span>
-      </a>
+
     </div>
   </div>
 
@@ -67,7 +64,7 @@
     </article>
     <article class="ops-kpi-card">
       <div class="ops-kpi-card__icon ops-kpi-card__icon--info"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-message"></use></svg></div>
-      <div class="ops-kpi-card__content"><span>Просрочено</span><strong>{{ metrics.overdue }}</strong><small>Незакрытые дедлайны задач в прошлом</small></div>
+      <div class="ops-kpi-card__content"><span>Просрочено</span><strong>{{ metrics.overdue }}</strong><small>Незакрытые сроки выполнения задач в прошлом</small></div>
     </article>
   </div>
 
@@ -75,7 +72,7 @@
     <summary>
       <div class="ops-disclosure__summary-copy">
         <strong>Добавить событие в календарь</strong>
-        <span>Новый блок вынесен в progressive disclosure, чтобы календарь оставался инструментом контроля, а не длинной формой.</span>
+        <span>Форма вынесена в раскрывающийся блок, чтобы календарь оставался инструментом контроля, а не длинной страницей ввода.</span>
       </div>
       <span class="ops-disclosure__summary-icon">
         <span>Открыть форму</span>
@@ -97,17 +94,6 @@
             <input class="portal-control" type="date" name="event_date" required />
           </label>
           <label class="portal-field">
-            <span>Тип события</span>
-            <select class="portal-control" name="event_type">
-              <option value="COURT">Судебное заседание</option>
-              <option value="DEADLINE">Срок задачи</option>
-              <option value="MEETING">Встреча</option>
-              <option value="CLIENT">Ответ клиенту</option>
-              <option value="DOCUMENT">Документ / пакет</option>
-              <option value="CUSTOM">Другое событие</option>
-            </select>
-          </label>
-          <label class="portal-field">
             <span>Привязка к делу</span>
             <select class="portal-control" name="legal_case_id">
               <option value="">Без привязки к делу</option>
@@ -118,7 +104,7 @@
           </label>
         </div>
         <div class="portal-form__footer portal-form__footer--split">
-          <div class="portal-form__note">Типы события окрашиваются в календаре: заседание, срок, встреча, внутренняя точка контроля, ответ клиенту и документный этап.</div>
+          <div class="portal-form__note">Событие с привязкой к делу отображается в рабочем контуре дела. Событие без привязки — внутреннее (администратор/юристы) и не показывается клиенту.</div>
           <button type="submit" class="portal-button portal-button--primary">Сохранить событие</button>
         </div>
       </form>
@@ -129,7 +115,7 @@
     <div class="portal-card portal-card--panel">
       <div class="calendar-toolbar--portal">
         <div>
-          <div class="portal-card__eyebrow">Calendar workspace</div>
+          <div class="portal-card__eyebrow">Рабочий календарь</div>
           <h2 class="portal-card__title">
             {% if selected_lawyer %}
               Календарь юриста: {{ selected_lawyer.full_name or selected_lawyer.username }}
@@ -149,6 +135,17 @@
             <div class="calendar-nav__label" id="calendar-range-label" aria-live="polite"></div>
             <button type="button" class="calendar-nav__button" id="calendar-next-range">Вперед</button>
           </div>
+          <form class="calendar-list-range" id="calendar-list-range" hidden>
+            <label>
+              <span>С</span>
+              <input class="portal-control" type="date" id="calendar-list-start" />
+            </label>
+            <label>
+              <span>По</span>
+              <input class="portal-control" type="date" id="calendar-list-end" />
+            </label>
+            <button type="submit" class="calendar-nav__button">Показать</button>
+          </form>
         </div>
       </div>
 
@@ -189,24 +186,6 @@
           </div>
           {% endfor %}
         </div>
-      </article>
-
-      <article class="portal-card portal-card--panel">
-        <div class="portal-card__head">
-          <div>
-            <div class="portal-card__eyebrow">Типы событий</div>
-            <h2 class="portal-card__title">Цветовая легенда</h2>
-          </div>
-        </div>
-        <div class="ops-tag-list">
-          <span class="ops-risk ops-risk--high">Судебное заседание</span>
-          <span class="ops-risk ops-risk--medium">Срок задачи</span>
-          <span class="workspace-signal">Встреча</span>
-          <span class="workspace-signal">Внутренний дедлайн</span>
-          <span class="workspace-signal">Ответ клиенту</span>
-          <span class="workspace-signal">Прочее событие</span>
-        </div>
-        <p class="ops-state-note">В month и week view одинаковая логика акцентов: красный для критичных заседаний и просрочек, янтарный для ближайших сроков, фиолетовый для клиентских и документных касаний.</p>
       </article>
     </div>
   </div>

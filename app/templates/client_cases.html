@@ -2,12 +2,24 @@
 {% block title %}Мои дела{% endblock %}
 {% block content %}
 <section class="portal-page" data-filter-root>
+  {% if request.query_params.get('withdrawn') == '1' %}
+  <div class="portal-alert portal-alert--success">
+    <strong>Обращение отозвано.</strong>
+    <span>Заявка снята с проверки администратора и сохранена в истории.</span>
+  </div>
+  {% elif request.query_params.get('withdraw_forbidden') == '1' %}
+  <div class="portal-alert portal-alert--warning">
+    <strong>Отзыв недоступен.</strong>
+    <span>Отозвать можно только обращение, которое ещё не рассмотрено администратором.</span>
+  </div>
+  {% endif %}
+
   <div class="portal-page__header">
     <div>
       <div class="portal-page__eyebrow">Мои обращения и дела</div>
       <h1 class="portal-page__title">Прогресс по каждому запросу</h1>
       <p class="portal-page__intro">
-        Отслеживайте статус дел, ближайшие дедлайны и активность по задачам.
+        Отслеживайте статус дел, ближайшие сроки выполнения и активность по задачам.
       </p>
     </div>
     <div class="portal-actions">
@@ -74,6 +86,11 @@
           {% set status_label = intake_status_labels['NEEDS_CLARIFICATION'] %}
           {% set progress = 18 %}
           {% set filter_tags = filter_tags + 'clarification pending ' %}
+        {% elif intake_status == 'WITHDRAWN' %}
+          {% set status_class = 'status-badge--surface' %}
+          {% set status_label = intake_status_labels['WITHDRAWN'] %}
+          {% set progress = 100 %}
+          {% set filter_tags = filter_tags + 'completed ' %}
         {% elif intake_status == 'CLOSED' %}
           {% set status_class = 'status-badge--surface' %}
           {% set status_label = intake_status_labels['CLOSED'] %}
@@ -134,19 +151,23 @@
           <strong>{{ status_label }}</strong>
         </div>
         <div class="metric-chip{% if deadline_days is not none and deadline_days < 0 %} metric-chip--danger{% elif deadline_days is not none and deadline_days <= 3 %} metric-chip--warning{% endif %}">
-          <span>Дедлайн</span>
+          <span>Срок выполнения</span>
           <strong>{{ c.deadline.strftime('%d.%m.%Y') if c.deadline else 'Не назначен' }}</strong>
         </div>
+        {% if not c.is_consultation %}
         <div class="metric-chip">
           <span>Задачи</span>
-          <strong>{% if c.is_consultation %}—{% else %}{{ stats.done }}/{{ stats.total }}{% endif %}</strong>
+          <strong>{{ stats.done }}/{{ stats.total }}</strong>
         </div>
+        {% endif %}
       </div>
 
       <div class="case-record__footer">
         <div class="case-record__hint">
           {% if intake_status == 'NEEDS_CLARIFICATION' and not c.intake_approved %}
-            Администратор запросил уточнение. Дополните обращение и отправьте на повторную проверку.
+            Администратор вернул обращение на доработку. Откройте карточку обращения, исправьте форму и отправьте запрос повторно.
+          {% elif intake_status == 'WITHDRAWN' and not c.intake_approved %}
+            Вы отозвали обращение до рассмотрения. При необходимости можно подать новое обращение.
           {% elif not c.intake_approved %}
             Обращение ожидает проверки администратором.
           {% elif c.is_consultation %}
@@ -163,10 +184,12 @@
           <a href="/client/cases/{{ c.id }}" class="portal-button portal-button--tertiary">Открыть дело</a>
           <a href="/client/documents?case_id={{ c.id }}" class="portal-button portal-button--ghost">Документы</a>
           {% if intake_status == 'NEEDS_CLARIFICATION' and not c.intake_approved %}
-          <form method="post" action="/client/cases/{{ c.id }}/supplement" style="display:inline-flex; gap:8px;">
-            <input type="hidden" name="return_to" value="/client/cases/{{ c.id }}" />
-            <input class="portal-control" type="text" name="message" placeholder="Добавьте уточнение" required />
-            <button type="submit" class="portal-button portal-button--primary">Дополнить</button>
+          <a href="/client/cases/{{ c.id }}#edit-request" class="portal-button portal-button--primary">Исправить обращение</a>
+          {% endif %}
+          {% if intake_status == 'PENDING_REVIEW' and not c.intake_approved %}
+          <form method="post" action="/client/cases/{{ c.id }}/withdraw" onsubmit="return confirm('Отозвать обращение до рассмотрения администратором?');">
+            <input type="hidden" name="return_to" value="/client/cases" />
+            <button type="submit" class="portal-button portal-button--danger">Отозвать обращение</button>
           </form>
           {% endif %}
         </div>
@@ -185,3 +208,4 @@
   </div>
 </section>
 {% endblock %}
+

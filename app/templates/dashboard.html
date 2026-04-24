@@ -1,11 +1,11 @@
 ﻿{% extends "base.html" %}
-{% block title %}Р“Р»Р°РІРЅР°СЏ РїР°РЅРµР»СЊ{% endblock %}
+{% block title %}Главная панель{% endblock %}
 {% block content %}
 <section class="portal-page staff-dashboard">
   {% if intake_accepted %}
   <div class="portal-alert portal-alert--success">
-    <strong>Р—Р°СЏРІРєР° РїСЂРёРЅСЏС‚Р° РІ СЂР°Р±РѕС‚Сѓ.</strong>
-    <span>РљР°СЂС‚РѕС‡РєР° РґРµР»Р° СЂР°СЃРїСЂРµРґРµР»РµРЅР° Рё РїРѕСЏРІРёР»Р°СЃСЊ РІ РѕРїРµСЂР°С†РёРѕРЅРЅРѕРј РєРѕРЅС‚СѓСЂРµ РєР°Р±РёРЅРµС‚Р°.</span>
+    <strong>Заявка принята в работу.</strong>
+    <span>Карточка дела распределена и появилась в операционном контуре кабинета.</span>
   </div>
   {% elif intake_clarified %}
   <div class="portal-alert portal-alert--warning">
@@ -19,94 +19,166 @@
   </div>
   {% elif intake_error == 'specialization' %}
   <div class="portal-alert portal-alert--warning">
-    <strong>РќРµ СѓРґР°Р»РѕСЃСЊ РЅР°Р·РЅР°С‡РёС‚СЊ СЋСЂРёСЃС‚Р°.</strong>
-    <span>Р”Р»СЏ РѕР±СЂР°С‰РµРЅРёСЏ РјРѕР¶РЅРѕ РІС‹Р±СЂР°С‚СЊ С‚РѕР»СЊРєРѕ СЋСЂРёСЃС‚Р° СЃ РїРѕРґС…РѕРґСЏС‰РµР№ СЃРїРµС†РёР°Р»РёР·Р°С†РёРµР№ РїРѕ РєР°С‚РµРіРѕСЂРёРё РґРµР»Р°.</span>
+    <strong>Не удалось назначить юриста.</strong>
+    <span>Для обращения можно выбрать только юриста с подходящей специализацией по категории дела.</span>
+  </div>
+  {% elif intake_error == 'no_lawyer' %}
+  <div class="portal-alert portal-alert--warning">
+    <strong>Не удалось назначить юриста.</strong>
+    <span>В системе нет доступных юристов для автоматического назначения по TOPSIS.</span>
   </div>
   {% endif %}
 
   {% if lawyer_created %}
   <div class="portal-alert portal-alert--success">
-    <strong>Р®СЂРёСЃС‚ РґРѕР±Р°РІР»РµРЅ.</strong>
-    <span>РќРѕРІС‹Р№ СЃРѕС‚СЂСѓРґРЅРёРє СѓР¶Рµ РґРѕСЃС‚СѓРїРµРЅ РґР»СЏ РЅР°Р·РЅР°С‡РµРЅРёСЏ РЅР° РґРµР»Р° Рё Р·Р°РґР°С‡Рё.</span>
+    <strong>Юрист добавлен.</strong>
+    <span>Новый сотрудник уже доступен для назначения на дела и задачи.</span>
   </div>
   {% elif lawyer_error %}
   <div class="portal-alert portal-alert--danger">
-    <strong>РќРµ СѓРґР°Р»РѕСЃСЊ РґРѕР±Р°РІРёС‚СЊ СЋСЂРёСЃС‚Р°.</strong>
+    <strong>Не удалось добавить юриста.</strong>
     <span>
-      {% if lawyer_error == "invalid_last_name" %}РџСЂРѕРІРµСЂСЊС‚Рµ РєРѕСЂСЂРµРєС‚РЅРѕСЃС‚СЊ С„Р°РјРёР»РёРё.
-      {% elif lawyer_error == "invalid_first_name" %}РџСЂРѕРІРµСЂСЊС‚Рµ РєРѕСЂСЂРµРєС‚РЅРѕСЃС‚СЊ РёРјРµРЅРё.
-      {% elif lawyer_error == "invalid_middle_name" %}РџСЂРѕРІРµСЂСЊС‚Рµ РєРѕСЂСЂРµРєС‚РЅРѕСЃС‚СЊ РѕС‚С‡РµСЃС‚РІР°.
-      {% elif lawyer_error == "invalid_phone" %}РџСЂРѕРІРµСЂСЊС‚Рµ С„РѕСЂРјР°С‚ С‚РµР»РµС„РѕРЅР°.
-      {% elif lawyer_error == "invalid_email" %}РџСЂРѕРІРµСЂСЊС‚Рµ email.
-      {% elif lawyer_error == "email_exists" %}РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ СЃ С‚Р°РєРёРј email СѓР¶Рµ СЃСѓС‰РµСЃС‚РІСѓРµС‚.
-      {% elif lawyer_error == "short_password" %}РџР°СЂРѕР»СЊ РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ РЅРµ РєРѕСЂРѕС‡Рµ 8 СЃРёРјРІРѕР»РѕРІ.
-      {% elif lawyer_error == "weak_password" %}РџР°СЂРѕР»СЊ РґРѕР»Р¶РµРЅ СЃРѕРґРµСЂР¶Р°С‚СЊ Р±СѓРєРІС‹ РІРµСЂС…РЅРµРіРѕ Рё РЅРёР¶РЅРµРіРѕ СЂРµРіРёСЃС‚СЂР° Рё С†РёС„СЂСѓ.
-      {% elif lawyer_error == "password_mismatch" %}РџР°СЂРѕР»Рё РЅРµ СЃРѕРІРїР°РґР°СЋС‚.
-      {% else %}РџСЂРѕРІРµСЂСЊС‚Рµ РІРІРµРґРµРЅРЅС‹Рµ РґР°РЅРЅС‹Рµ Рё РїРѕРїСЂРѕР±СѓР№С‚Рµ СЃРЅРѕРІР°.{% endif %}
+      {% if lawyer_error == "invalid_last_name" %}Проверьте корректность фамилии.
+      {% elif lawyer_error == "invalid_first_name" %}Проверьте корректность имени.
+      {% elif lawyer_error == "invalid_middle_name" %}Проверьте корректность отчества.
+      {% elif lawyer_error == "invalid_phone" %}Проверьте формат телефона.
+      {% elif lawyer_error == "invalid_email" %}Проверьте email.
+      {% elif lawyer_error == "email_exists" %}Пользователь с таким email уже существует.
+      {% elif lawyer_error == "short_password" %}Пароль должен быть не короче 8 символов.
+      {% elif lawyer_error == "weak_password" %}Пароль должен содержать буквы верхнего и нижнего регистра и цифру.
+      {% elif lawyer_error == "password_mismatch" %}Пароли не совпадают.
+      {% else %}Проверьте введенные данные и попробуйте снова.{% endif %}
     </span>
   </div>
   {% endif %}
 
   <div class="portal-page__header">
     <div>
-      <h1 class="portal-page__title">Р“Р»Р°РІРЅР°СЏ РїР°РЅРµР»СЊ СЋСЂРёСЃС‚Р°</h1>
+      <h1 class="portal-page__title">Главная панель администратора</h1>
       <p class="portal-page__intro">
-        РћС‚РєСЂС‹РІР°Р№С‚Рµ РґРµРЅСЊ СЃ РїРѕРЅСЏС‚РЅРѕР№ РєР°СЂС‚РёРЅРѕР№ РїРѕ РґРµР»Р°Рј, СЃСЂРѕРєР°Рј, РєРѕРјРјСѓРЅРёРєР°С†РёСЏРј Рё СЂРёСЃРєР°Рј.
+        Открывайте день с понятной картиной по делам, срокам и коммуникациям.
       </p>
     </div>
     <div class="portal-actions">
       <a href="/cases" class="portal-button portal-button--primary">
         <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-briefcase"></use></svg>
-        <span>РћС‚РєСЂС‹С‚СЊ РґРµР»Р°</span>
+        <span>Открыть дела</span>
       </a>
+      {% if user.role.value == "LAWYER" %}
       <a href="/tasks" class="portal-button portal-button--secondary">
         <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-check-square"></use></svg>
-        <span>РџРµСЂРµР№С‚Рё Рє Р·Р°РґР°С‡Р°Рј</span>
+        <span>Мои задачи</span>
       </a>
+      {% endif %}
     </div>
   </div>
+
+  {% if user.role.value == "ADMIN" and pending_intakes %}
+  <article class="portal-card portal-card--panel">
+    <div class="portal-card__head">
+      <div>
+        <div class="portal-card__eyebrow">Очередь обращений</div>
+        <h2 class="portal-card__title">Проверка новых заявок</h2>
+      </div>
+    </div>
+    <div class="ops-data-list">
+      {% for item in pending_intakes %}
+      <article class="ops-data-list__item">
+        <div class="ops-inline-meta">
+          <strong>{{ item.case.case_number }} — {{ item.case.title }}</strong>
+          <span class="status-badge status-badge--warning">{{ item.intake_status_label }}</span>
+          {% if item.case.is_consultation %}<span class="status-badge status-badge--info">Консультация</span>{% endif %}
+        </div>
+        <p>{{ item.case.description }}</p>
+        {% if item.case.intake_admin_comment %}<p><strong>Комментарий администратора:</strong> {{ item.case.intake_admin_comment }}</p>{% endif %}
+        <div class="ops-inline-meta">
+          <span>Контакт: {{ {"CHAT":"Чат","EMAIL":"Электронная почта","PHONE":"Телефон"}.get((item.case.preferred_contact_method or "CHAT"), item.case.preferred_contact_method or "Чат") }}</span>
+        </div>
+        {% if item.recommendations %}
+        <div class="ops-state-note">
+          <strong>Рекомендация TOPSIS:</strong>
+          {% for recommendation in item.recommendations %}
+          {{ recommendation.user.full_name or recommendation.user.username }}{% if not loop.last %}, {% endif %}
+          {% endfor %}
+        </div>
+        {% endif %}
+        <form method="post" action="/admin/intake/{{ item.case.id }}/accept" class="ops-inline-form intake-action-form">
+          <div class="ops-state-note">Юрист будет назначен автоматически по TOPSIS после одобрения обращения.</div>
+          <label class="intake-action-row">
+            <span>Приоритет -</span>
+            <select name="priority"><option value="MEDIUM">Средний</option><option value="HIGH">Высокий</option><option value="LOW">Низкий</option></select>
+          </label>
+          <button type="submit">Принять в работу</button>
+        </form>
+        <form method="post" action="/admin/intake/{{ item.case.id }}/clarify" class="ops-inline-form intake-action-form">
+          <label class="intake-action-row">
+            <span>Исправления -</span>
+            <input type="text" name="comment" placeholder="Что нужно уточнить" required />
+          </label>
+          <button type="submit">Отправить на уточнение</button>
+        </form>
+        <form method="post" action="/admin/intake/{{ item.case.id }}/close" class="ops-inline-form intake-action-form">
+          <label class="intake-action-row">
+            <span>Отказ -</span>
+            <input type="text" name="comment" placeholder="Причина закрытия" />
+          </label>
+          <button type="submit">Закрыть обращение</button>
+        </form>
+      </article>
+      {% endfor %}
+    </div>
+  </article>
+  {% endif %}
 
   <div class="ops-hero">
     <article class="portal-card portal-card--hero ops-hero__main">
       <div>
-        <div class="portal-card__eyebrow">РРЅС„РѕСЂРјР°С†РёСЏ РЅР° СЃРµРіРѕРґРЅСЏ</div>
-        <h2 class="portal-card__title">Р¤РѕРєСѓСЃ СЂР°Р±РѕС‡РµРіРѕ РґРЅСЏ</h2>
+        <div class="portal-card__eyebrow">Информация на сегодня</div>
+        <h2 class="portal-card__title">Фокус рабочего дня</h2>
         <p class="portal-page__intro">
           {% if user.role.value == "LAWYER" %}
-          Р’ РІР°С€РµРј РєРѕРЅС‚СѓСЂРµ {{ active_cases }} Р°РєС‚РёРІРЅС‹С… РґРµР», {{ tasks_todo }} Р·Р°РґР°С‡ РІ СЂР°Р±РѕС‚Рµ Рё {{ overdue_tasks }} Р·Р°РґР°С‡ СЃ СЂРёСЃРєРѕРј РїРѕ СЃСЂРѕРєСѓ.
+          В вашем контуре {{ active_cases }} активных дел, {{ tasks_todo }} задач в работе и {{ overdue_tasks }} просроченных задач.
           {% else %}
-          Р’ РѕРїРµСЂР°С†РёРѕРЅРЅРѕРј РєРѕРЅС‚СѓСЂРµ {{ active_cases }} Р°РєС‚РёРІРЅС‹С… РґРµР», {{ tasks_todo }} РѕС‚РєСЂС‹С‚С‹С… Р·Р°РґР°С‡ Рё {{ unread_notifications }} РЅРµРїСЂРѕС‡РёС‚Р°РЅРЅС‹С… СЃРёРіРЅР°Р»РѕРІ РїРѕ СЃРёСЃС‚РµРјРµ.
+          В операционном контуре {{ active_cases }} активных дел, {{ tasks_todo }} открытых задач и {{ unread_notifications }} непрочитанных сигналов по системе.
           {% endif %}
         </p>
       </div>
 
       <div class="ops-hero__summary">
         <div class="ops-summary-card">
-          <span>РЎРµРіРѕРґРЅСЏ</span>
+          <span>Сегодня</span>
           <strong>{{ today.strftime('%d.%m.%Y') }}</strong>
-          <p>Р Р°Р±РѕС‡Р°СЏ СЃРІРѕРґРєР° РѕР±РЅРѕРІР»РµРЅР° СЃ СѓС‡РµС‚РѕРј РґРµР», Р·Р°РґР°С‡, СЃРѕР±С‹С‚РёР№ Рё Р°РєС‚РёРІРЅРѕСЃС‚Рё РєР»РёРµРЅС‚РѕРІ.</p>
+          <p>Рабочая сводка обновлена с учетом дел, задач, событий и активности клиентов.</p>
         </div>
+        {% if user.role.value == "LAWYER" %}
         <div class="ops-summary-card">
-          <span>Р—Р°РґР°С‡Рё РЅР° СЃРµРіРѕРґРЅСЏ</span>
-          <strong>{{ today_tasks|length }}</strong>
-          <p>РџСЂРёРѕСЂРёС‚РµС‚РЅС‹Р№ СЃРїРёСЃРѕРє РЅР° РґРµРЅСЊ СѓР¶Рµ СЃРѕР±СЂР°РЅ Рё РґРѕСЃС‚СѓРїРµРЅ РЅРёР¶Рµ.</p>
+          <span>Назначенные дела</span>
+          <strong>{{ active_cases }}</strong>
+          <p>В работу попадают только обращения и дела, где вы назначены ответственным или участником команды.</p>
         </div>
+        {% else %}
+        <div class="ops-summary-card">
+          <span>Активные задачи</span>
+          <strong>{{ tasks_todo }}</strong>
+          <p>Задачи ведутся внутри конкретных дел и доступны из карточек дел.</p>
+        </div>
+        {% endif %}
         <div class="ops-summary-card">
           {% if user.role.value == "LAWYER" %}
-          <span>РњРѕСЏ СЃРїРµС†РёР°Р»РёР·Р°С†РёСЏ</span>
-          <strong>{{ user.specialization or 'РќРµ СѓРєР°Р·Р°РЅР°' }}</strong>
-          <p>РќР°Р·РЅР°С‡РµРЅРёРµ РґРµР» РѕРіСЂР°РЅРёС‡РµРЅРѕ РІР°С€РµР№ СЃРїРµС†РёР°Р»РёР·Р°С†РёРµР№. РџСЂРё РЅРµРѕР±С…РѕРґРёРјРѕСЃС‚Рё РѕР±РЅРѕРІРёС‚Рµ РїСЂРѕС„РёР»СЊ Сѓ Р°РґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂР°.</p>
+          <span>Моя специализация</span>
+          <strong>{{ user.specialization or 'Не указана' }}</strong>
+          <p>Назначение дел ограничено вашей специализацией. При необходимости обновите профиль у администратора.</p>
           {% else %}
-          <span>РќРѕРІС‹Рµ РґРµР№СЃС‚РІРёСЏ РєР»РёРµРЅС‚РѕРІ</span>
+          <span>Новые действия клиентов</span>
           <strong>{{ client_actions|length }}</strong>
-          <p>РЎРѕРѕР±С‰РµРЅРёСЏ, РґРѕРєСѓРјРµРЅС‚С‹ Рё Р·Р°РїСЂРѕСЃС‹, РєРѕС‚РѕСЂС‹Рµ РјРѕРіСѓС‚ РїРѕРІР»РёСЏС‚СЊ РЅР° С…РѕРґ РґРµР».</p>
+          <p>Сообщения, документы и запросы, которые могут повлиять на ход дел.</p>
           {% endif %}
         </div>
       </div>
     </article>
 
     <aside class="portal-card portal-card--accent">
-      <div class="portal-card__eyebrow">РўСЂРµР±СѓРµС‚ РІРЅРёРјР°РЅРёСЏ</div>
+      <div class="portal-card__eyebrow">Требует внимания</div>
       <div class="ops-attention-list">
         {% for item in attention_cards %}
         <article class="ops-attention-item">
@@ -127,9 +199,9 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-briefcase"></use></svg>
       </div>
       <div class="ops-kpi-card__content">
-        <span>РђРєС‚РёРІРЅС‹Рµ РґРµР»Р°</span>
+        <span>Активные дела</span>
         <strong>{{ active_cases }}</strong>
-        <small>РўРµРєСѓС‰РёР№ РїРѕСЂС‚С„РµР»СЊ РІ СЂР°Р±РѕС‚Рµ</small>
+        <small>Текущий портфель в работе</small>
       </div>
     </article>
     <article class="ops-kpi-card">
@@ -137,9 +209,9 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-check-square"></use></svg>
       </div>
       <div class="ops-kpi-card__content">
-        <span>РњРѕРё Р·Р°РґР°С‡Рё</span>
+        <span>Мои задачи</span>
         <strong>{{ tasks_todo }}</strong>
-        <small>РћС‚РєСЂС‹С‚С‹Рµ Р·Р°РґР°С‡Рё РїРѕ С‚РµРєСѓС‰РµРјСѓ РєРѕРЅС‚СѓСЂСѓ</small>
+        <small>Открытые задачи по текущему контуру</small>
       </div>
     </article>
     <article class="ops-kpi-card">
@@ -147,9 +219,9 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-alert-circle"></use></svg>
       </div>
       <div class="ops-kpi-card__content">
-        <span>РџСЂРѕСЃСЂРѕС‡РµРЅРѕ</span>
+        <span>Просрочено</span>
         <strong>{{ overdue_tasks }}</strong>
-        <small>РќСѓР¶РЅР° РЅРµРјРµРґР»РµРЅРЅР°СЏ СЂРµР°РєС†РёСЏ РїРѕ СЃСЂРѕРєР°Рј</small>
+        <small>Нужна немедленная реакция по срокам</small>
       </div>
     </article>
     <article class="ops-kpi-card">
@@ -157,9 +229,9 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-file"></use></svg>
       </div>
       <div class="ops-kpi-card__content">
-        <span>РќРѕРІС‹Рµ РґРѕРєСѓРјРµРЅС‚С‹</span>
+        <span>Новые документы</span>
         <strong>{{ new_documents_count }}</strong>
-        <small>Р”РѕР±Р°РІР»РµРЅС‹ Р·Р° РїРѕСЃР»РµРґРЅРёРµ 7 РґРЅРµР№</small>
+        <small>Добавлены за последние 7 дней</small>
       </div>
     </article>
     <article class="ops-kpi-card">
@@ -167,9 +239,9 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-bell"></use></svg>
       </div>
       <div class="ops-kpi-card__content">
-        <span>РљСЂРёС‚РёС‡РЅС‹Рµ СЃРёРіРЅР°Р»С‹</span>
+        <span>Критичные сигналы</span>
         <strong>{{ critical_notifications }}</strong>
-        <small>РЈРІРµРґРѕРјР»РµРЅРёСЏ, С‚СЂРµР±СѓСЋС‰РёРµ РѕС‚РІРµС‚Р°</small>
+        <small>Уведомления, требующие ответа</small>
       </div>
     </article>
     <article class="ops-kpi-card">
@@ -177,63 +249,63 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-calendar"></use></svg>
       </div>
       <div class="ops-kpi-card__content">
-        <span>Р‘Р»РёР¶Р°Р№С€РёРµ Р·Р°СЃРµРґР°РЅРёСЏ</span>
+        <span>Ближайшие заседания</span>
         <strong>{{ upcoming_hearings_count }}</strong>
-        <small>РЎСѓРґРµР±РЅС‹Рµ СЃРѕР±С‹С‚РёСЏ РІ РіРѕСЂРёР·РѕРЅС‚Рµ 14 РґРЅРµР№</small>
+        <small>Судебные события в горизонте 14 дней</small>
       </div>
     </article>
   </div>
+
+  <article class="portal-card portal-card--panel">
+    <div class="portal-card__head">
+      <div>
+        <div class="portal-card__eyebrow">Портфель дел</div>
+        <h2 class="portal-card__title">{% if user.role.value == "LAWYER" %}Мои назначенные дела{% else %}Актуальные дела{% endif %}</h2>
+      </div>
+      <a href="/cases" class="portal-inline-link">
+        <span>Перейти к делам</span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-arrow-right"></use></svg>
+      </a>
+    </div>
+    <div class="ops-data-list">
+      {% for item in staff_cases[:8] %}
+      {% set insight = case_insights.get(item.id, {}) %}
+      <article class="ops-data-list__item">
+        <div class="ops-inline-meta">
+          <strong>{{ item.case_number }} — {{ item.title }}</strong>
+          <span class="status-badge status-badge--info">{{ stage_labels[item.stage] }}</span>
+          {% if item.is_consultation %}<span class="status-badge status-badge--brand">Консультация</span>{% endif %}
+        </div>
+        <div class="ops-inline-meta">
+          <span>Клиент: {{ item.client.name if item.client else 'Не указан' }}</span>
+          <span>Категория: {{ item.category or 'Не указана' }}</span>
+          <span>Команда: {{ insight.get("team_label", insight.get("responsible_name", "Не назначены")) }}</span>
+        </div>
+        <div class="ops-inline-meta">
+          <span>Открытых задач: {{ insight.get("open_tasks", 0) }}</span>
+          <span>Документов: {{ insight.get("documents_count", 0) }}</span>
+          <span>{% if item.deadline %}Срок: {{ item.deadline.strftime('%d.%m.%Y') }}{% else %}Срок не назначен{% endif %}</span>
+        </div>
+        <a href="/cases/{{ item.id }}" class="ops-primary-link">Открыть дело</a>
+      </article>
+      {% else %}
+      <div class="portal-empty portal-empty--compact">
+        <h3>{% if user.role.value == "LAWYER" %}Назначенных дел пока нет{% else %}Пока нет активных дел{% endif %}</h3>
+        <p>{% if user.role.value == "LAWYER" %}Как только администратор назначит вам обращение, карточка появится в этом блоке сразу на главной странице.{% else %}После создания и распределения дел они появятся здесь для быстрого контроля.{% endif %}</p>
+      </div>
+      {% endfor %}
+    </div>
+  </article>
 
   <div class="ops-dashboard-grid">
     <article class="portal-card portal-card--panel ops-scroll-card">
       <div class="portal-card__head">
         <div>
-          <div class="portal-card__eyebrow">РЎРµРіРѕРґРЅСЏ</div>
-          <h2 class="portal-card__title">Р—Р°РґР°С‡Рё РЅР° СЃРµРіРѕРґРЅСЏ</h2>
-        </div>
-        <a href="/tasks" class="portal-inline-link">
-          <span>Р’СЃРµ Р·Р°РґР°С‡Рё</span>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-arrow-right"></use></svg>
-        </a>
-      </div>
-      <div class="ops-feed">
-        {% for task in today_tasks %}
-        <article class="ops-feed__item">
-          <div class="ops-feed__icon">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-check-square"></use></svg>
-          </div>
-          <div class="ops-feed__content">
-            <div class="ops-feed__top">
-              <h3 class="ops-feed__title">{{ task.title }}</h3>
-              <span class="ops-chip ops-chip--{{ (task.priority or 'MEDIUM')|lower }}">{{ {"LOW":"РќРёР·РєРёР№","MEDIUM":"РЎСЂРµРґРЅРёР№","HIGH":"Р’С‹СЃРѕРєРёР№"}.get(task.priority or 'MEDIUM', task.priority or 'MEDIUM') }}</span>
-            </div>
-            <div class="ops-feed__meta">
-              <span>РЎСЂРѕРє: {{ task.due_date.strftime('%d.%m.%Y') }}</span>
-              <span>РЎС‚Р°С‚СѓСЃ: {{ status_labels[task.status] }}</span>
-              <span>Р”РµР»Рѕ: {{ task.legal_case.case_number if task.legal_case else 'вЂ”' }}</span>
-            </div>
-            {% if task.description %}
-            <p class="ops-feed__desc">{{ task.description }}</p>
-            {% endif %}
-          </div>
-        </article>
-        {% else %}
-        <div class="portal-empty portal-empty--compact">
-          <h3>РќР° СЃРµРіРѕРґРЅСЏ РЅРµС‚ РѕС‚РґРµР»СЊРЅС‹С… Р·Р°РґР°С‡</h3>
-          <p>РЎРІРѕР±РѕРґРЅРѕРµ РѕРєРЅРѕ РјРѕР¶РЅРѕ РёСЃРїРѕР»СЊР·РѕРІР°С‚СЊ РґР»СЏ СЂР°Р·Р±РѕСЂР° РЅРѕРІС‹С… РґРµР», РґРѕРєСѓРјРµРЅС‚РѕРІ Рё РїРѕРґРіРѕС‚РѕРІРєРё РїСЂРѕС†РµСЃСЃСѓР°Р»СЊРЅС‹С… С€Р°РіРѕРІ.</p>
-        </div>
-        {% endfor %}
-      </div>
-    </article>
-
-    <article class="portal-card portal-card--panel ops-scroll-card">
-      <div class="portal-card__head">
-        <div>
-          <div class="portal-card__eyebrow">РЎСЂРѕРєРё Рё СЃРѕР±С‹С‚РёСЏ</div>
-          <h2 class="portal-card__title">Р‘Р»РёР¶Р°Р№С€РёРµ СЃСЂРѕРєРё</h2>
+          <div class="portal-card__eyebrow">Сроки и события</div>
+          <h2 class="portal-card__title">Ближайшие сроки</h2>
         </div>
         <a href="/calendar" class="portal-inline-link">
-          <span>РљР°Р»РµРЅРґР°СЂСЊ</span>
+          <span>Календарь</span>
           <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-arrow-right"></use></svg>
         </a>
       </div>
@@ -246,7 +318,7 @@
           <div class="ops-feed__content">
             <div class="ops-feed__top">
               <h3 class="ops-feed__title">{{ item.title }}</h3>
-              <span class="ops-risk ops-risk--{{ item.urgency }}">{{ item.kind }}</span>
+              <span class="status-badge {% if item.urgency == 'danger' %}status-badge--warning{% elif item.urgency == 'warning' %}status-badge--brand{% else %}status-badge--success{% endif %}">{{ item.kind }}</span>
             </div>
             <div class="ops-feed__meta">
               <span>{{ item.date.strftime('%d.%m.%Y') }}</span>
@@ -259,8 +331,8 @@
         </article>
         {% else %}
         <div class="portal-empty portal-empty--compact">
-          <h3>РќРµС‚ Р±Р»РёР¶Р°Р№С€РёС… СЃРѕР±С‹С‚РёР№</h3>
-          <p>РќРѕРІС‹Рµ Р·Р°СЃРµРґР°РЅРёСЏ, РґРµРґР»Р°Р№РЅС‹ Рё РІСЃС‚СЂРµС‡Рё РїРѕСЏРІСЏС‚СЃСЏ Р·РґРµСЃСЊ Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё.</p>
+          <h3>Нет ближайших событий</h3>
+          <p>Новые заседания, сроки выполнения и встречи появятся здесь автоматически.</p>
         </div>
         {% endfor %}
       </div>
@@ -269,8 +341,8 @@
     <article class="portal-card portal-card--panel ops-scroll-card ops-dashboard-analytics">
       <div class="portal-card__head">
         <div>
-          <div class="portal-card__eyebrow">РђРЅР°Р»РёС‚РёРєР°</div>
-          <h2 class="portal-card__title">РњРёРЅРё-Р°РЅР°Р»РёС‚РёРєР° РїРѕ СЃС‚Р°РґРёСЏРј РґРµР»</h2>
+          <div class="portal-card__eyebrow">Аналитика</div>
+          <h2 class="portal-card__title">Мини-аналитика по стадиям дел</h2>
         </div>
       </div>
       <div class="ops-stage-chart">
@@ -278,7 +350,7 @@
         <div class="ops-stage-row">
           <div class="ops-stage-row__top">
             <strong>{{ item.label }}</strong>
-            <span>{{ item.count }} РґРµР» вЂў {{ item.share }}%</span>
+            <span>{{ item.count }} дел • {{ item.share }}%</span>
           </div>
           <div class="ops-stage-row__track"><i style="width: {{ item.share }}%"></i></div>
         </div>
@@ -291,8 +363,8 @@
     <article class="portal-card portal-card--panel ops-scroll-card">
       <div class="portal-card__head">
         <div>
-          <div class="portal-card__eyebrow">РР·РјРµРЅРµРЅРёСЏ РїРѕ РґРµР»Р°Рј</div>
-          <h2 class="portal-card__title">РџРѕСЃР»РµРґРЅРёРµ РёР·РјРµРЅРµРЅРёСЏ</h2>
+          <div class="portal-card__eyebrow">Изменения по делам</div>
+          <h2 class="portal-card__title">Последние изменения</h2>
         </div>
       </div>
       <div class="ops-feed">
@@ -315,8 +387,8 @@
         </article>
         {% else %}
         <div class="portal-empty portal-empty--compact">
-          <h3>РџРѕРєР° РЅРµС‚ РЅРѕРІС‹С… РёР·РјРµРЅРµРЅРёР№</h3>
-          <p>Р”РѕРєСѓРјРµРЅС‚С‹, РєРѕРјРјРµРЅС‚Р°СЂРёРё Рё РґСЂСѓРіРёРµ СЃРѕР±С‹С‚РёСЏ РїРѕ РґРµР»Р°Рј Р±СѓРґСѓС‚ СЃРѕР±РёСЂР°С‚СЊСЃСЏ Р·РґРµСЃСЊ РІ РєРѕРјРїР°РєС‚РЅСѓСЋ РѕРїРµСЂР°С†РёРѕРЅРЅСѓСЋ Р»РµРЅС‚Сѓ.</p>
+          <h3>Пока нет новых изменений</h3>
+          <p>Документы, комментарии и другие события по делам будут собираться здесь в компактную операционную ленту.</p>
         </div>
         {% endfor %}
       </div>
@@ -325,8 +397,8 @@
     <article class="portal-card portal-card--panel ops-scroll-card">
       <div class="portal-card__head">
         <div>
-          <div class="portal-card__eyebrow">РђРєС‚РёРІРЅРѕСЃС‚СЊ РєР»РёРµРЅС‚РѕРІ</div>
-          <h2 class="portal-card__title">РќРѕРІС‹Рµ РґРµР№СЃС‚РІРёСЏ РєР»РёРµРЅС‚РѕРІ</h2>
+          <div class="portal-card__eyebrow">Активность клиентов</div>
+          <h2 class="portal-card__title">Новые действия клиентов</h2>
         </div>
       </div>
       <div class="ops-feed">
@@ -343,14 +415,14 @@
             <p class="ops-feed__desc">{{ item.description }}</p>
             <div class="ops-feed__meta">
               <a href="/cases/{{ item.case.id }}" class="ops-primary-link">{{ item.case.case_number }}</a>
-              <span>{{ item.case.client.name if item.case.client else 'РљР»РёРµРЅС‚' }}</span>
+              <span>{{ item.case.client.name if item.case.client else 'Клиент' }}</span>
             </div>
           </div>
         </article>
         {% else %}
         <div class="portal-empty portal-empty--compact">
-          <h3>РќРѕРІС‹С… РґРµР№СЃС‚РІРёР№ РєР»РёРµРЅС‚Р° РЅРµС‚</h3>
-          <p>РљРѕРіРґР° РєР»РёРµРЅС‚ РЅР°РїРёС€РµС‚ РІ С‡Р°С‚ РёР»Рё Р·Р°РіСЂСѓР·РёС‚ РјР°С‚РµСЂРёР°Р»С‹, РґРµР№СЃС‚РІРёРµ РїРѕСЏРІРёС‚СЃСЏ РІ СЌС‚РѕРј Р±Р»РѕРєРµ.</p>
+          <h3>Новых действий клиента нет</h3>
+          <p>Когда клиент напишет в чат или загрузит материалы, действие появится в этом блоке.</p>
         </div>
         {% endfor %}
       </div>
@@ -360,59 +432,15 @@
  
 
 
-  {% if user.role.value == "ADMIN" and pending_intakes %}
-  <article class="portal-card portal-card--panel">
-    <div class="portal-card__head">
-      <div>
-        <div class="portal-card__eyebrow">Очередь обращений</div>
-        <h2 class="portal-card__title">Проверка новых заявок</h2>
-      </div>
-    </div>
-    <div class="ops-data-list">
-      {% for item in pending_intakes %}
-      <article class="ops-data-list__item">
-        <div class="ops-inline-meta">
-          <strong>{{ item.case.case_number }} — {{ item.case.title }}</strong>
-          <span class="status-badge status-badge--warning">{{ item.intake_status_label }}</span>
-          {% if item.case.is_consultation %}<span class="status-badge status-badge--info">Консультация</span>{% endif %}
-        </div>
-        <p>{{ item.case.description }}</p>
-        {% if item.case.intake_admin_comment %}<p><strong>Комментарий администратора:</strong> {{ item.case.intake_admin_comment }}</p>{% endif %}
-        <div class="ops-inline-meta">
-          <span>Контакт: {{ {"CHAT":"Чат","EMAIL":"Email","PHONE":"Телефон"}.get((item.case.preferred_contact_method or "CHAT"), item.case.preferred_contact_method or "Чат") }}</span>
-          <span>{% if item.case.allow_phone_contact %}Разрешен звонок{% else %}Без звонка{% endif %}</span>
-        </div>
-        <form method="post" action="/admin/intake/{{ item.case.id }}/accept" class="ops-inline-form">
-          <select name="responsible_lawyer_id" required>
-            {% for recommendation in item.recommendations %}
-            <option value="{{ recommendation.user.id }}">{{ recommendation.user.full_name or recommendation.user.username }} ({{ recommendation.score }})</option>
-            {% endfor %}
-          </select>
-          <select name="priority"><option value="MEDIUM">Средний</option><option value="HIGH">Высокий</option><option value="LOW">Низкий</option></select>
-          <button type="submit">Принять в работу</button>
-        </form>
-        <form method="post" action="/admin/intake/{{ item.case.id }}/clarify" class="ops-inline-form">
-          <input type="text" name="comment" placeholder="Что нужно уточнить" required />
-          <button type="submit">Отправить на уточнение</button>
-        </form>
-        <form method="post" action="/admin/intake/{{ item.case.id }}/close" class="ops-inline-form">
-          <input type="text" name="comment" placeholder="Причина закрытия" />
-          <button type="submit">Закрыть обращение</button>
-        </form>
-      </article>
-      {% endfor %}
-    </div>
-  </article>
-  {% endif %}
   {% if user.role.value == "ADMIN" %}
   <details class="ops-disclosure">
     <summary>
       <div class="ops-disclosure__summary-copy">
-        <strong>РЈРїСЂР°РІР»РµРЅРёРµ РєРѕРјР°РЅРґРѕР№</strong>
-        <span>Р”РѕР±Р°РІР»РµРЅРёРµ РЅРѕРІРѕРіРѕ СЋСЂРёСЃС‚Р° Р±РµР· С‚СЏР¶РµР»РѕР№ С„РѕСЂРјС‹ РЅР° РіР»Р°РІРЅРѕРј СЌРєСЂР°РЅРµ Рё Р±С‹СЃС‚СЂС‹Р№ РґРѕСЃС‚СѓРї Рє СЂР°СЃРїСЂРµРґРµР»РµРЅРёСЋ РЅР°РіСЂСѓР·РєРё.</span>
+        <strong>Управление командой</strong>
+        <span>Добавление нового юриста без тяжелой формы на главном экране и быстрый доступ к распределению нагрузки.</span>
       </div>
       <span class="ops-disclosure__summary-icon">
-        <span>РћС‚РєСЂС‹С‚СЊ С„РѕСЂРјСѓ</span>
+        <span>Открыть форму</span>
         <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-chevron-down"></use></svg>
       </span>
     </summary>
@@ -420,41 +448,41 @@
       <form method="post" action="/admin/lawyers/new" class="portal-form">
         <div class="portal-form-grid portal-form-grid--2">
           <label class="portal-field">
-            <span>Р¤Р°РјРёР»РёСЏ</span>
+            <span>Фамилия</span>
             <input class="portal-control" type="text" name="last_name" required />
           </label>
           <label class="portal-field">
-            <span>РРјСЏ</span>
+            <span>Имя</span>
             <input class="portal-control" type="text" name="first_name" required />
           </label>
           <label class="portal-field">
-            <span>РћС‚С‡РµСЃС‚РІРѕ</span>
+            <span>Отчество</span>
             <input class="portal-control" type="text" name="middle_name" />
           </label>
           <label class="portal-field">
-            <span>РўРµР»РµС„РѕРЅ</span>
+            <span>Телефон</span>
             <input class="portal-control" type="text" name="phone" />
           </label>
           <label class="portal-field">
-            <span>Email</span>
+            <span>Электронная почта</span>
             <input class="portal-control" type="email" name="email" required />
           </label>
           <label class="portal-field">
-            <span>РЎРїРµС†РёР°Р»РёР·Р°С†РёСЏ</span>
+            <span>Специализация</span>
             <input class="portal-control" type="text" name="specialization" />
           </label>
           <label class="portal-field">
-            <span>РџР°СЂРѕР»СЊ</span>
+            <span>Пароль</span>
             <input class="portal-control" type="password" name="password" minlength="8" required />
           </label>
           <label class="portal-field">
-            <span>РџРѕРІС‚РѕСЂРёС‚Рµ РїР°СЂРѕР»СЊ</span>
+            <span>Повторите пароль</span>
             <input class="portal-control" type="password" name="password_confirm" minlength="8" required />
           </label>
         </div>
         <div class="portal-form__footer portal-form__footer--split">
-          <div class="portal-form__note">РќРѕРІС‹Р№ СЋСЂРёСЃС‚ СЃСЂР°Р·Сѓ РїРѕСЏРІРёС‚СЃСЏ РІ СЃРїРёСЃРєР°С… РЅР°Р·РЅР°С‡РµРЅРёСЏ РїРѕ РґРµР»Р°Рј, Р·Р°РґР°С‡Р°Рј Рё РІС…РѕРґСЏС‰РёРј РѕР±СЂР°С‰РµРЅРёСЏРј.</div>
-          <button type="submit" class="portal-button portal-button--primary">Р”РѕР±Р°РІРёС‚СЊ СЋСЂРёСЃС‚Р°</button>
+          <div class="portal-form__note">Новый юрист сразу появится в списках назначения по делам, задачам и входящим обращениям.</div>
+          <button type="submit" class="portal-button portal-button--primary">Добавить юриста</button>
         </div>
       </form>
     </div>
@@ -462,4 +490,5 @@
   {% endif %}
 </section>
 {% endblock %}
+
 

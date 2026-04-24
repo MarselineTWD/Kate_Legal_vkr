@@ -1,16 +1,13 @@
 {% extends "base.html" %}
 {% block title %}Юридические дела{% endblock %}
 {% block content %}
-{% set metrics = namespace(high_risk=0, urgent_deadlines=0, unassigned=0) %}
+{% set metrics = namespace(urgent_deadlines=0, unassigned=0) %}
 {% for item in cases %}
   {% set insight = case_insights.get(item.id, {}) %}
-  {% if insight.get('risk_level') == 'high' %}
-    {% set metrics.high_risk = metrics.high_risk + 1 %}
-  {% endif %}
   {% if insight.get('deadline_days') is not none and insight.get('deadline_days') <= 7 and item.stage.value != 'COMPLETED' %}
     {% set metrics.urgent_deadlines = metrics.urgent_deadlines + 1 %}
   {% endif %}
-  {% if not item.responsible_lawyer_id %}
+  {% if not item.responsible_lawyer_id and not item.lawyers %}
     {% set metrics.unassigned = metrics.unassigned + 1 %}
   {% endif %}
 {% endfor %}
@@ -18,13 +15,23 @@
 <section class="portal-page">
   {% if created %}
   <div class="portal-alert portal-alert--success">
-    <strong>Дело создано.</strong>
-    <span>Карточка добавлена в портфель и доступна в списке, канбане и календаре.</span>
+    <strong>Обращение создано.</strong>
+    <span>Заявка отправлена в очередь обращений и ожидает одобрения администратора с назначением юриста по TOPSIS.</span>
+  </div>
+  {% elif deleted %}
+  <div class="portal-alert portal-alert--success">
+    <strong>Дело удалено.</strong>
+    <span>Карточка и связанные рабочие сущности удалены из портфеля.</span>
   </div>
   {% elif request.query_params.get('error') == 'lawyer_specialization' %}
   <div class="portal-alert portal-alert--warning">
     <strong>Нельзя назначить выбранного юриста.</strong>
     <span>Назначение допускается только юристу с подходящей специализацией по категории дела.</span>
+  </div>
+  {% elif request.query_params.get('error') == 'phone_missing' %}
+  <div class="portal-alert portal-alert--warning">
+    <strong>У клиента не заполнен телефон.</strong>
+    <span>Для способа связи «Телефон» или отметки «Можно связаться по телефону» в карточке клиента должен быть номер телефона.</span>
   </div>
   {% endif %}
 
@@ -33,18 +40,18 @@
       <div class="portal-page__eyebrow">Юридические дела</div>
       <h1 class="portal-page__title">Портфель дел и оперативный контроль</h1>
       <p class="portal-page__intro">
-        Раздел собран как enterprise data view: быстрый поиск, фильтры, режим карточек и плотная табличная раскладка, современные статусы риска и умные TOPSIS-подсказки вместо сухих ссылок.
+        Единый интерфейс управления делами: поиск, фильтры и режимы отображения.
       </p>
     </div>
     <div class="portal-actions">
       <a href="#new-case" class="portal-button portal-button--primary">
         <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-plus-square"></use></svg>
-        <span>Новое дело</span>
+        <span>Новое обращение</span>
       </a>
     </div>
   </div>
 
-  <div class="ops-kpi-grid ops-kpi-grid--5">
+  <div class="ops-kpi-grid ops-kpi-grid--4">
     <article class="ops-kpi-card">
       <div class="ops-kpi-card__icon ops-kpi-card__icon--navy"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-briefcase"></use></svg></div>
       <div class="ops-kpi-card__content"><span>Всего дел</span><strong>{{ cases|length }}</strong><small>Портфель в текущем списке</small></div>
@@ -54,12 +61,8 @@
       <div class="ops-kpi-card__content"><span>Активные</span><strong>{{ cases|selectattr('stage.value', 'ne', 'COMPLETED')|list|length }}</strong><small>Не завершены и остаются в работе</small></div>
     </article>
     <article class="ops-kpi-card">
-      <div class="ops-kpi-card__icon ops-kpi-card__icon--danger"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-alert-circle"></use></svg></div>
-      <div class="ops-kpi-card__content"><span>Высокий риск</span><strong>{{ metrics.high_risk }}</strong><small>Есть риск по сроку, задачам или распределению</small></div>
-    </article>
-    <article class="ops-kpi-card">
       <div class="ops-kpi-card__icon ops-kpi-card__icon--warning"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-calendar"></use></svg></div>
-      <div class="ops-kpi-card__content"><span>Дедлайны до 7 дней</span><strong>{{ metrics.urgent_deadlines }}</strong><small>Нужна плотная проверка сроков</small></div>
+      <div class="ops-kpi-card__content"><span>Сроки выполнения до 7 дней</span><strong>{{ metrics.urgent_deadlines }}</strong><small>Нужна плотная проверка сроков</small></div>
     </article>
     <article class="ops-kpi-card">
       <div class="ops-kpi-card__icon ops-kpi-card__icon--info"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-user"></use></svg></div>
@@ -70,8 +73,8 @@
   <details class="ops-disclosure" id="new-case">
     <summary>
       <div class="ops-disclosure__summary-copy">
-        <strong>Создать новое дело</strong>
-        <span>Форма вынесена в progressive disclosure, чтобы раздел оставался легким для сканирования и управления существующим портфелем.</span>
+        <strong>Создать обращение</strong>
+        <span>Форма повторяет клиентское обращение и дополнена служебными полями для распределения в рабочий контур.</span>
       </div>
       <span class="ops-disclosure__summary-icon">
         <span>Открыть форму</span>
@@ -79,19 +82,41 @@
       </span>
     </summary>
     <div class="ops-disclosure__body">
-      <form method="post" action="/cases/new" class="portal-form">
+      <form method="post" action="/cases/new" class="portal-form" enctype="multipart/form-data">
         <div class="portal-form-grid portal-form-grid--2">
           <label class="portal-field">
-            <span>Номер дела</span>
-            <input class="portal-control" type="text" name="case_number" value="{{ generated_case_number }}" />
-          </label>
-          <label class="portal-field">
-            <span>Название</span>
-            <input class="portal-control" type="text" name="title" required />
+            <span>Тема обращения</span>
+            <input class="portal-control" type="text" name="title" placeholder="Например: оспаривание увольнения" required />
           </label>
           <label class="portal-field">
             <span>Категория</span>
-            <input class="portal-control" type="text" name="category" placeholder="Например: договорная работа" required />
+            <select class="portal-control" name="category" required>
+              <option value="">Выберите категорию обращения</option>
+              <option value="Трудовое право">Трудовое право</option>
+              <option value="Семейное право">Семейное право</option>
+              <option value="Наследственное право">Наследственное право</option>
+              <option value="Жилищное право">Жилищное право</option>
+              <option value="Земельное право">Земельное право</option>
+              <option value="Договорное право">Договорное право</option>
+              <option value="Корпоративное право">Корпоративное право</option>
+              <option value="Налоговое право">Налоговое право</option>
+              <option value="Банкротство">Банкротство</option>
+              <option value="Арбитражные споры">Арбитражные споры</option>
+              <option value="Административное право">Административное право</option>
+              <option value="Уголовное право">Уголовное право</option>
+              <option value="Защита прав потребителей">Защита прав потребителей</option>
+              <option value="Споры с банками">Споры с банками</option>
+              <option value="Страховые споры">Страховые споры</option>
+              <option value="Исполнительное производство">Исполнительное производство</option>
+              <option value="Интеллектуальная собственность">Интеллектуальная собственность</option>
+              <option value="Международное право">Международное право</option>
+              <option value="Миграционное право">Миграционное право</option>
+              <option value="Другое">Другое</option>
+            </select>
+          </label>
+          <label class="portal-field">
+            <span>Номер дела</span>
+            <input class="portal-control" type="text" name="case_number" value="{{ generated_case_number }}" />
           </label>
           <label class="portal-field">
             <span>Клиент</span>
@@ -102,17 +127,26 @@
             </select>
           </label>
           <label class="portal-field">
-            <span>Ответственный юрист</span>
-            <select class="portal-control" name="responsible_lawyer_id">
-              <option value="">Не назначен</option>
-              {% for lawyer in lawyers %}
-              <option value="{{ lawyer.id }}">{{ lawyer.full_name or lawyer.username }}{% if lawyer.specialization %} — {{ lawyer.specialization }}{% endif %}</option>
-              {% endfor %}
+            <span>Предпочтительный способ связи</span>
+            <select class="portal-control" name="preferred_contact_method">
+              <option value="CHAT" selected>Чат в кабинете</option>
+              <option value="EMAIL">Электронная почта</option>
+              <option value="PHONE">Телефон</option>
             </select>
-            <small>Выбирайте юриста по профильной специализации дела.</small>
+          </label>
+          <label class="portal-field portal-field--span-2">
+            <span>Дополнительные параметры</span>
+            <label class="comment-form__toggle">
+              <input type="checkbox" name="allow_phone_contact" value="true" />
+              Можно ли связаться с клиентом по телефону
+            </label>
+            <label class="comment-form__toggle">
+              <input type="checkbox" name="is_consultation" value="true" />
+              Консультационное обращение (только чат без задач по делу)
+            </label>
           </label>
           <label class="portal-field">
-            <span>Дедлайн</span>
+            <span>Срок выполнения</span>
             <input class="portal-control" type="date" name="deadline" />
           </label>
           <label class="portal-field">
@@ -132,13 +166,17 @@
             </select>
           </label>
           <label class="portal-field portal-field--span-2">
-            <span>Описание</span>
-            <textarea class="portal-control" name="description" rows="4"></textarea>
+            <span>Описание проблемы</span>
+            <textarea class="portal-control portal-control--textarea" name="description" rows="6" placeholder="Опишите, что произошло, какие документы уже есть и какую помощь вы ожидаете." required></textarea>
+          </label>
+          <label class="portal-field portal-field--span-2">
+            <span>Документы обращения</span>
+            <input class="portal-control" type="file" name="documents" multiple accept=".pdf,.doc,.docx,.txt,.rtf,.png,.jpg,.jpeg,.webp,.gif" />
           </label>
         </div>
         <div class="portal-form__footer portal-form__footer--split">
-          <div class="portal-form__note">После сохранения дело сразу попадет в общий портфель, карточку дела и канбан-доску.</div>
-          <button type="submit" class="portal-button portal-button--primary">Сохранить дело</button>
+          <div class="portal-form__note">После сохранения обращение будет создано в портфеле и доступно для дальнейшей проверки и распределения.</div>
+          <button type="submit" class="portal-button portal-button--primary">Создать обращение</button>
         </div>
       </form>
     </div>
@@ -161,7 +199,7 @@
         </button>
       </div>
     </div>
-    <div class="ops-toolbar__body">
+    <div class="ops-toolbar__body cases-toolbar__body">
       <label class="ops-search">
         <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-search"></use></svg>
         <input class="portal-control" type="search" placeholder="Поиск по номеру, теме, клиенту, категории или юристу" data-filter-search />
@@ -178,12 +216,6 @@
         <option value="MEDIUM">Средний</option>
         <option value="HIGH">Высокий</option>
       </select>
-      <select class="portal-control ops-filter-select" data-filter-select="risk">
-        <option value="">Любой риск</option>
-        <option value="low">Под контролем</option>
-        <option value="medium">Нужен контроль</option>
-        <option value="high">Высокий риск</option>
-      </select>
       <select class="portal-control ops-filter-select" data-filter-select="lawyer">
         <option value="">Все юристы</option>
         {% for lawyer in lawyers %}
@@ -198,11 +230,10 @@
       <article
         class="ops-record-card"
         data-filter-item
-        data-search="{{ item.case_number }} {{ item.title }} {{ item.category }} {{ item.client.name if item.client else '' }} {{ insight.get('responsible_name', '') }}"
+        data-search="{{ item.case_number }} {{ item.title }} {{ item.category }} {{ item.client.name if item.client else '' }} {{ insight.get('team_label', insight.get('responsible_name', '')) }}"
         data-stage="{{ item.stage.value }}"
         data-priority="{{ item.priority }}"
-        data-risk="{{ insight.get('risk_level', 'low') }}"
-        data-lawyer="{{ item.responsible_lawyer_id or '' }}"
+        data-lawyer="{{ insight.get('team_filter', item.responsible_lawyer_id or '') }}"
       >
         <div class="ops-record-card__header">
           <div>
@@ -210,45 +241,43 @@
             <h3>{{ item.title }}</h3>
             {% if item.is_consultation %}<small class="ops-secondary">Дело-консультация</small>{% endif %}
           </div>
-          <span class="status-badge {% if item.stage.value == 'COMPLETED' %}status-badge--success{% elif insight.get('risk_level') == 'high' %}status-badge--danger{% elif item.stage.value == 'NEW_REQUEST' %}status-badge--info{% else %}status-badge--brand{% endif %}">
+          <span class="status-badge {% if item.stage.value == 'COMPLETED' %}status-badge--success{% elif item.stage.value == 'NEW_REQUEST' %}status-badge--info{% else %}status-badge--brand{% endif %}">
             {{ stage_labels[item.stage] }}
           </span>
         </div>
 
         <div class="ops-inline-meta">
-          <span>Клиент: {{ item.client.name if item.client else '—' }}</span>
-          <span>Категория: {{ item.category }}</span>
+          <span>Команда: {{ insight.get('team_label', 'Не назначены') }}</span>
         </div>
 
         <div class="ops-meta-grid">
           <div class="ops-meta-item">
-            <span>Ответственный</span>
-            <strong>{{ insight.get('responsible_name', 'Не назначен') }}</strong>
-            {% if insight.get('responsible_specialization') %}
-            <small>{{ insight.get('responsible_specialization') }}</small>
-            {% endif %}
+            <span>Клиент</span>
+            <strong>{{ item.client.name if item.client else '—' }}</strong>
+          </div>
+          <div class="ops-meta-item">
+            <span>Категория</span>
+            <strong>{{ item.category }}</strong>
           </div>
           <div class="ops-meta-item"><span>Приоритет</span><strong>{{ {"LOW":"Низкий","MEDIUM":"Средний","HIGH":"Высокий"}.get(item.priority or 'MEDIUM', item.priority or 'MEDIUM') }}</strong></div>
-          <div class="ops-meta-item"><span>Дедлайн</span><strong>{{ item.deadline.strftime('%d.%m.%Y') if item.deadline else 'Не назначен' }}</strong></div>
-          <div class="ops-meta-item"><span>Риск</span><strong>{{ insight.get('risk_label', 'Под контролем') }}</strong></div>
+          <div class="ops-meta-item"><span>Срок выполнения</span><strong>{{ item.deadline.strftime('%d.%m.%Y') if item.deadline else 'Не назначен' }}</strong></div>
         </div>
 
         {% if item.description %}
         <p class="ops-record-card__desc">{{ item.description[:220] }}{% if item.description|length > 220 %}...{% endif %}</p>
         {% endif %}
 
-        <div class="ops-suggestion">
-          <strong>Assistant suggestion</strong>
-          {% if insight.get('suggestion') %}
-          <p>{{ insight.get('suggestion').lawyer_name }} • {{ insight.get('suggestion').summary }}</p>
-          {% else %}
-          <p>Рекомендация будет доступна после уточнения категории и состава юридической команды.</p>
-          {% endif %}
-        </div>
+
 
         <div class="ops-inline-actions">
           <a href="/cases/{{ item.id }}" class="portal-button portal-button--primary">Открыть карточку</a>
           <a href="/kanban" class="portal-button portal-button--ghost">Открыть в канбане</a>
+          {% if user.role.value == 'ADMIN' %}
+          <form method="post" action="/cases/{{ item.id }}/delete" data-confirm-form data-confirm-title="Удалить дело?" data-confirm-text="Будут удалены карточка дела, задачи, документы, события и коммуникации по этому делу.">
+            <input type="hidden" name="return_to" value="/cases" />
+            <button type="submit" class="portal-button portal-button--danger-ghost">Удалить</button>
+          </form>
+          {% endif %}
         </div>
       </article>
       {% else %}
@@ -257,7 +286,7 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-briefcase"></use></svg>
         </div>
         <h3>Портфель пока пуст</h3>
-        <p>Создайте первое дело, чтобы увидеть карточки, статусы, риски и операционные рекомендации.</p>
+        <p>Создайте первое дело, чтобы увидеть карточки, статусы и операционные рекомендации.</p>
       </div>
       {% endfor %}
     </div>
@@ -270,11 +299,10 @@
               <th>Дело</th>
               <th>Клиент</th>
               <th>Стадия</th>
-              <th>Юрист</th>
+              <th>Команда</th>
               <th>Приоритет</th>
-              <th>Дедлайн</th>
-              <th>Риск</th>
-              <th>TOPSIS</th>
+              <th>Срок выполнения</th>
+              <th>Рейтинг</th>
               <th class="is-column-locked" data-col-min-width="320">Быстрое действие</th>
             </tr>
           </thead>
@@ -283,11 +311,10 @@
             {% set insight = case_insights.get(item.id, {}) %}
             <tr
               data-filter-item
-              data-search="{{ item.case_number }} {{ item.title }} {{ item.category }} {{ item.client.name if item.client else '' }} {{ insight.get('responsible_name', '') }}"
+              data-search="{{ item.case_number }} {{ item.title }} {{ item.category }} {{ item.client.name if item.client else '' }} {{ insight.get('team_label', insight.get('responsible_name', '')) }}"
               data-stage="{{ item.stage.value }}"
               data-priority="{{ item.priority }}"
-              data-risk="{{ insight.get('risk_level', 'low') }}"
-              data-lawyer="{{ item.responsible_lawyer_id or '' }}"
+              data-lawyer="{{ insight.get('team_filter', item.responsible_lawyer_id or '') }}"
               data-status-row="case-{{ item.id }}"
             >
               <td>
@@ -301,15 +328,14 @@
               <td data-status-label>{{ stage_labels[item.stage] }}</td>
               <td>
                 <div class="ops-table__primary">
-                  <strong>{{ insight.get('responsible_name', 'Не назначен') }}</strong>
+                  <strong>{{ insight.get('team_label', 'Не назначены') }}</strong>
                   {% if insight.get('responsible_specialization') %}
-                  <span class="ops-table__secondary">{{ insight.get('responsible_specialization') }}</span>
+                  <span class="ops-table__secondary">Ответственный: {{ insight.get('responsible_name', 'Не назначен') }}</span>
                   {% endif %}
                 </div>
               </td>
               <td><span class="ops-chip ops-chip--{{ (item.priority or 'MEDIUM')|lower }}">{{ {"LOW":"Низкий","MEDIUM":"Средний","HIGH":"Высокий"}.get(item.priority or 'MEDIUM', item.priority or 'MEDIUM') }}</span></td>
               <td>{{ item.deadline.strftime('%d.%m.%Y') if item.deadline else '—' }}</td>
-              <td><span class="ops-risk ops-risk--{{ insight.get('risk_level', 'low') }}">{{ insight.get('risk_label', 'Под контролем') }}</span></td>
               <td>
                 {% if insight.get('suggestion') %}
                 <div class="ops-table__primary">
@@ -331,6 +357,12 @@
                     </select>
                     <button type="submit">Сменить</button>
                   </form>
+                  {% if user.role.value == 'ADMIN' %}
+                  <form method="post" action="/cases/{{ item.id }}/delete" data-confirm-form data-confirm-title="Удалить дело?" data-confirm-text="Будут удалены карточка дела, задачи, документы, события и коммуникации по этому делу.">
+                    <input type="hidden" name="return_to" value="/cases" />
+                    <button type="submit" class="portal-button portal-button--danger-ghost">Удалить</button>
+                  </form>
+                  {% endif %}
                 </div>
               </td>
             </tr>

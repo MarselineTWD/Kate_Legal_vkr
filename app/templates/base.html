@@ -38,6 +38,10 @@
         {% set current_section_title = 'Сообщения' %}
       {% elif current_path.startswith('/client/calendar') %}
         {% set current_section_title = 'События и сроки' %}
+      {% elif current_path.startswith('/reports') %}
+        {% set current_section_title = 'Отчетность' %}
+      {% elif current_path.startswith('/settings') %}
+        {% set current_section_title = 'Настройки' %}
       {% elif current_path.startswith('/notifications') %}
         {% set current_section_title = 'Уведомления' %}
       {% elif current_path.startswith('/client/profile') %}
@@ -46,7 +50,7 @@
         {% set current_section_title = 'Клиентский кабинет' %}
       {% endif %}
       {% set current_portal_title = 'Клиентский кабинет' %}
-      {% set current_portal_subtitle = 'service portal' %}
+      {% set current_portal_subtitle = 'Клиентский портал' %}
       {% set current_role_label = 'Клиент' %}
     {% else %}
       {% if current_path == '/app' %}
@@ -63,17 +67,17 @@
         {% set current_section_title = 'Календарь' %}
       {% elif current_path.startswith('/kanban') %}
         {% set current_section_title = 'Канбан' %}
+      {% elif current_path.startswith('/reports') %}
+        {% set current_section_title = 'Отчетность' %}
+      {% elif current_path.startswith('/settings') %}
+        {% set current_section_title = 'Настройки' %}
       {% elif current_path.startswith('/notifications') %}
         {% set current_section_title = 'Уведомления' %}
-      {% elif current_path.startswith('/audit') %}
-        {% set current_section_title = 'Журнал действий' %}
-      {% elif current_path.startswith('/portal/intake') %}
-        {% set current_section_title = 'Публичная заявка' %}
       {% else %}
         {% set current_section_title = 'Кабинет юриста' %}
       {% endif %}
       {% set current_portal_title = 'Кабинет юриста' if user.role.value == 'LAWYER' else 'Операционный кабинет' %}
-      {% set current_portal_subtitle = 'legal-tech operations portal' %}
+      {% set current_portal_subtitle = 'Рабочее пространство юридической команды' %}
       {% set current_role_label = 'Юрист' if user.role.value == 'LAWYER' else 'Администратор' %}
     {% endif %}
 
@@ -222,6 +226,7 @@
         </button>
       </div>
 
+      <div class="client-sidebar__nav">
       {% if is_client_portal %}
       <div class="client-sidebar__section">
         <div class="client-sidebar__caption">Рабочее пространство</div>
@@ -240,7 +245,7 @@
           </a>
           <a href="/client/cases" class="client-nav__link{% if current_path.startswith('/client/cases') %} is-active{% endif %}">
             <span class="client-nav__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-briefcase"></use></svg></span>
-            <span class="client-nav__copy"><strong>Мои дела</strong><small>Статусы, дедлайны и действия</small></span>
+            <span class="client-nav__copy"><strong>Мои дела</strong><small>Статусы, сроки выполнения и действия</small></span>
           </a>
           <a href="/client/documents" class="client-nav__link{% if current_path.startswith('/client/documents') %} is-active{% endif %}">
             <span class="client-nav__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-file"></use></svg></span>
@@ -266,7 +271,7 @@
         <nav class="client-nav" aria-label="Рабочий стол юриста">
           <a href="/app" class="client-nav__link{% if current_path == '/app' %} is-active{% endif %}">
             <span class="client-nav__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-grid"></use></svg></span>
-            <span class="client-nav__copy"><strong>Главная</strong><small>Сводка дня, риски и активность клиентов</small></span>
+            <span class="client-nav__copy"><strong>Главная</strong><small>Сводка дня и активность клиентов</small></span>
           </a>
         </nav>
       </div>
@@ -280,15 +285,17 @@
           </a>
           <a href="/cases" class="client-nav__link{% if current_path.startswith('/cases') %} is-active{% endif %}">
             <span class="client-nav__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-briefcase"></use></svg></span>
-            <span class="client-nav__copy"><strong>Дела</strong><small>Портфель, стадии, риски и рекомендации</small></span>
+            <span class="client-nav__copy"><strong>Дела</strong><small>Портфель, стадии и рекомендации</small></span>
           </a>
+          {% if user.role.value == 'LAWYER' %}
           <a href="/tasks" class="client-nav__link{% if current_path.startswith('/tasks') %} is-active{% endif %}">
             <span class="client-nav__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-check-square"></use></svg></span>
             <span class="client-nav__copy"><strong>Задачи</strong><small>Мои задачи, контроль сроков и исполнителей</small></span>
           </a>
+          {% endif %}
           <a href="/calendar" class="client-nav__link{% if current_path.startswith('/calendar') %} is-active{% endif %}">
             <span class="client-nav__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-calendar"></use></svg></span>
-            <span class="client-nav__copy"><strong>Календарь</strong><small>Заседания, встречи и внутренние дедлайны</small></span>
+            <span class="client-nav__copy"><strong>Календарь</strong><small>Заседания, встречи и внутренние сроки выполнения</small></span>
           </a>
           <a href="/kanban" class="client-nav__link{% if current_path.startswith('/kanban') %} is-active{% endif %}">
             <span class="client-nav__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-columns"></use></svg></span>
@@ -305,46 +312,20 @@
             <span class="client-nav__copy"><strong>Уведомления</strong><small>Важные сигналы, документы и ответы клиентов</small></span>
           </a>
           {% if user.role.value == 'ADMIN' %}
-          <a href="/invoices" class="client-nav__link{% if current_path.startswith('/invoices') %} is-active{% endif %}">
-            <span class="client-nav__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-receipt"></use></svg></span>
-            <span class="client-nav__copy"><strong>Счета</strong><small>Выставление и контроль статусов</small></span>
+          <a href="/reports" class="client-nav__link{% if current_path.startswith('/reports') %} is-active{% endif %}">
+            <span class="client-nav__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-activity"></use></svg></span>
+            <span class="client-nav__copy"><strong>Отчетность</strong><small>Сводная аналитика по делам, загрузке и результатам</small></span>
+          </a>
+          <a href="/settings" class="client-nav__link{% if current_path.startswith('/settings') %} is-active{% endif %}">
+            <span class="client-nav__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-shield"></use></svg></span>
+            <span class="client-nav__copy"><strong>Настройки</strong><small>Параметры TOPSIS, критерии и влияние настроек на подбор</small></span>
           </a>
           {% endif %}
         </nav>
       </div>
-
-      {% if user.role.value == 'ADMIN' %}
-      <div class="client-sidebar__section staff-sidebar__group">
-        <div class="client-sidebar__caption">Служебное</div>
-        <nav class="client-nav" aria-label="Служебные разделы">
-          <a href="/audit" class="client-nav__link{% if current_path.startswith('/audit') %} is-active{% endif %}">
-            <span class="client-nav__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-activity"></use></svg></span>
-            <span class="client-nav__copy"><strong>Журнал</strong><small>История действий пользователей и системы</small></span>
-          </a>
-          <a href="/portal/intake" class="client-nav__link{% if current_path.startswith('/portal/intake') %} is-active{% endif %}">
-            <span class="client-nav__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-send"></use></svg></span>
-            <span class="client-nav__copy"><strong>Публичная заявка</strong><small>Внешняя форма новых обращений и материалов</small></span>
-          </a>
-        </nav>
-      </div>
       {% endif %}
-      {% endif %}
-
-      <div class="client-sidebar__footer">
-        <div class="client-sidebar__support">
-          <div class="client-sidebar__support-icon">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-shield"></use></svg>
-          </div>
-          <div class="client-sidebar__support-copy">
-            <strong>{{ user.full_name or user.username }}</strong>
-            {% if is_staff_portal %}
-            <p>{{ current_role_label }}{% if user.specialization %} • {{ user.specialization }}{% endif %}</p>
-            {% else %}
-            <p>Защищённый кабинет для коммуникации с юридической командой</p>
-            {% endif %}
-          </div>
-        </div>
       </div>
+
     </aside>
 
     <div class="client-shell__main">
@@ -393,7 +374,7 @@
   <header class="header site-header">
     <div class="container header-inner">
       <a href="{% if has_user %}/app{% else %}/{% endif %}" class="brand">
-        <img src="/site2static/images/default-logo.png" alt="Логотип" />
+        <img src="/site2static/images/logo.png" alt="Логотип" />
         ЮрНавигатор
       </a>
       <nav class="nav">
@@ -422,8 +403,8 @@
           <h2>Контакты</h2>
           <p>ООО «ЮрНавигатор»</p>
           <p>г. Екатеринбург, ул. Ленина, 50</p>
-          <p>Телефон: +7 (343) 200-00-00</p>
-          <p>Email: info@lawworkspace.ru</p>
+          <p>Телефон: +7 (987) 200-00-00</p>
+          <p>Электронная почта: info@lawworkspace.ru</p>
           <p>Пн-Пт, 09:00-18:00</p>
         </div>
         <div class="footer-company">
@@ -439,8 +420,24 @@
   {% if (show_chat is not defined or show_chat) and not has_user %}
   <div id="floating-chat" class="floating-chat" aria-live="polite">
     <div class="floating-chat__title">Помощь по системе</div>
-    <p>Если возникли вопросы по делам, дедлайнам или документам, напишите администратору через внутренние комментарии.</p>
+    <p>Если возникли вопросы по делам, срокам выполнения или документам, напишите администратору через внутренние комментарии.</p>
     <button type="button" id="floating-chat-close">Скрыть</button>
+  </div>
+  {% endif %}
+
+  {% if uses_portal_shell %}
+  <div class="portal-modal" id="portal-confirm-modal" hidden>
+    <div class="portal-modal__backdrop" data-confirm-close></div>
+    <div class="portal-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="portal-confirm-title">
+      <div class="portal-modal__header">
+        <h3 id="portal-confirm-title" data-confirm-title>Подтвердите действие</h3>
+      </div>
+      <p class="portal-modal__text" data-confirm-text>Действие будет выполнено без возможности быстрого отката.</p>
+      <div class="portal-modal__actions">
+        <button type="button" class="portal-button portal-button--ghost" data-confirm-close>Отмена</button>
+        <button type="button" class="portal-button portal-button--danger" data-confirm-submit>Подтвердить</button>
+      </div>
+    </div>
   </div>
   {% endif %}
 

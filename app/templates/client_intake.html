@@ -7,7 +7,7 @@
       <div class="portal-page__eyebrow">Новое обращение</div>
       <h1 class="portal-page__title">Подать запрос в юридическую команду</h1>
       <p class="portal-page__intro">
-        Опишите ситуацию, приложите документы и отправьте обращение. После проверки администратор назначит ответственного юриста и уведомит вас в кабинете.
+        Опишите ситуацию, приложите документы и отправьте обращение. После проверки администратор назначит юридическую команду.Если обращение принимается, оно станет делом.
       </p>
     </div>
     <div class="portal-actions">
@@ -99,21 +99,22 @@
               <span>Предпочтительный способ связи</span>
               <select class="portal-control" name="preferred_contact_method" id="preferred-contact-method">
                 <option value="CHAT" selected>Чат в кабинете</option>
-                <option value="EMAIL">Email</option>
+                <option value="EMAIL">Электронная почта</option>
                 <option value="PHONE">Телефон</option>
               </select>
             </label>
             <label class="portal-field portal-field--span-2">
               <span>Дополнительные параметры</span>
-              <label class="comment-form__toggle" style="margin-bottom:8px;">
+              <label class="comment-form__toggle">
                 <input type="checkbox" name="allow_phone_contact" value="true" id="allow-phone-contact" />
                 Можно ли связаться со мной по телефону
               </label>
+              <small id="phone-contact-hint">В профиле должен быть заполнен номер телефона.</small>
               <label class="comment-form__toggle">
                 <input type="checkbox" name="is_consultation" value="true" id="is-consultation" />
                 Консультационное обращение (для юриста только чат, без задач по делу)
               </label>
-              <small id="phone-contact-hint">Если включите звонок, в профиле должен быть заполнен номер телефона.</small>
+
             </label>
           </div>
         </div>
@@ -161,7 +162,7 @@
 
         <div class="portal-form__footer">
           <div class="portal-form__note">
-            После отправки обращение появится в разделе «Мои дела», а статус обновится после проверки администратором.
+            После отправки обращение появится в разделе «Мои дела» как заявка на проверке. После принятия оно станет отдельным делом.
           </div>
           <button type="submit" class="portal-button portal-button--primary portal-button--large">
             <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-arrow-right"></use></svg>

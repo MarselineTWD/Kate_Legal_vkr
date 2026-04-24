@@ -1,47 +1,52 @@
 ﻿{% extends "base.html" %}
-{% block title %}{{ legal_case.case_number }} вЂ” РєР°СЂС‚РѕС‡РєР° РґРµР»Р°{% endblock %}
+{% block title %}{{ legal_case.case_number }} — карточка дела{% endblock %}
 {% block content %}
 {% set active_tab = request.query_params.get('tab', 'overview').strip() or 'overview' %}
 {% set page_error = request.query_params.get('error', '').strip() %}
-{% set stage_badge = 'status-badge--success' if legal_case.stage.value == 'COMPLETED' else 'status-badge--danger' if detail.risk.level == 'high' else 'status-badge--warning' if detail.risk.level == 'medium' else 'status-badge--brand' %}
-{% set risk_chip = 'workspace-badge--high' if detail.risk.level == 'high' else 'workspace-badge--medium' if detail.risk.level == 'medium' else 'workspace-badge--low' %}
+{% set stage_badge = 'status-badge--success' if legal_case.stage.value == 'COMPLETED' else 'status-badge--brand' %}
 {% set next_event = detail.events[0] if detail.events else None %}
 <section class="portal-page case-detail-page">
   {% if request.query_params.get('uploaded') == '1' %}
   <div class="portal-alert portal-alert--success">
-    <strong>Р”РѕРєСѓРјРµРЅС‚С‹ РґРѕР±Р°РІР»РµРЅС‹.</strong>
-    <span>Р¤Р°Р№Р»С‹ РїРѕСЏРІРёР»РёСЃСЊ РІ document center РґРµР»Р° Рё РґРѕСЃС‚СѓРїРЅС‹ РєРѕРјР°РЅРґРµ СЃСЂР°Р·Сѓ РїРѕСЃР»Рµ Р·Р°РіСЂСѓР·РєРё.</span>
+    <strong>Документы добавлены.</strong>
+    <span>Файлы появились в разделе документов дела и доступны команде сразу после загрузки.</span>
   </div>
   {% elif request.query_params.get('deleted') == '1' %}
   <div class="portal-alert portal-alert--success">
-    <strong>Р”РѕРєСѓРјРµРЅС‚ СѓРґР°Р»РµРЅ.</strong>
-    <span>Р¤Р°Р№Р» СѓРґР°Р»РµРЅ РёР· РєР°СЂС‚РѕС‡РєРё РґРµР»Р° Рё Р±РѕР»СЊС€Рµ РЅРµ РѕС‚РѕР±СЂР°Р¶Р°РµС‚СЃСЏ РІ СЂР°Р±РѕС‡РµРј РєРѕРЅС‚СѓСЂРµ.</span>
+    <strong>Документ удален.</strong>
+    <span>Файл удален из карточки дела и больше не отображается в рабочем контуре.</span>
   </div>
   {% elif page_error == 'file' %}
   <div class="portal-alert portal-alert--danger">
-    <strong>РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ С„Р°Р№Р»С‹.</strong>
-    <span>Р’С‹Р±РµСЂРёС‚Рµ С…РѕС‚СЏ Р±С‹ РѕРґРёРЅ РґРѕРєСѓРјРµРЅС‚, С‡С‚РѕР±С‹ РґРѕР±Р°РІРёС‚СЊ РјР°С‚РµСЂРёР°Р»С‹ РІ РєР°СЂС‚РѕС‡РєСѓ РґРµР»Р°.</span>
+    <strong>Не удалось загрузить файлы.</strong>
+    <span>Выберите хотя бы один документ, чтобы добавить материалы в карточку дела.</span>
   </div>
   {% elif page_error == 'lawyer_specialization' %}
   <div class="portal-alert portal-alert--warning">
-    <strong>РќР°Р·РЅР°С‡РµРЅРёРµ РѕС‚РєР»РѕРЅРµРЅРѕ.</strong>
-    <span>Р”РµР»Рѕ РјРѕР¶РЅРѕ РЅР°Р·РЅР°С‡РёС‚СЊ С‚РѕР»СЊРєРѕ СЋСЂРёСЃС‚Сѓ СЃ РїРѕРґС…РѕРґСЏС‰РµР№ СЃРїРµС†РёР°Р»РёР·Р°С†РёРµР№ РїРѕ РєР°С‚РµРіРѕСЂРёРё.</span>
+    <strong>Назначение отклонено.</strong>
+    <span>Дело можно назначить только юристу с подходящей специализацией по категории.</span>
   </div>
   {% endif %}
 
   <div class="portal-page__header">
     <div>
-      <div class="portal-page__eyebrow">Legal case workspace</div>
-      <h1 class="portal-page__title">РљР°СЂС‚РѕС‡РєР° РґРµР»Р° РєР°Рє РѕРїРµСЂР°С†РёРѕРЅРЅРѕРµ СЂР°Р±РѕС‡РµРµ РїСЂРѕСЃС‚СЂР°РЅСЃС‚РІРѕ</h1>
+      <div class="portal-page__eyebrow">Рабочее пространство дела</div>
+      <h1 class="portal-page__title">Карточка дела как операционное рабочее пространство</h1>
       <p class="portal-page__intro">
-        Р—РґРµСЃСЊ СЃРѕР±СЂР°РЅС‹ СЃС‚Р°С‚СѓСЃ, СЂРёСЃРє, Р·Р°РґР°С‡Рё, РґРѕРєСѓРјРµРЅС‚С‹, РєРѕРјРјСѓРЅРёРєР°С†РёРё, СЃСЂРѕРєРё, СѓС‡Р°СЃС‚РЅРёРєРё Рё РёСЃС‚РѕСЂРёСЏ РёР·РјРµРЅРµРЅРёР№ РІ РµРґРёРЅРѕР№ СЂР°Р±РѕС‡РµР№ СЃС‚Р°РЅС†РёРё СЋСЂРёСЃС‚Р°.
+        Здесь собраны статус, задачи, документы, коммуникации, сроки, участники и история изменений в единой рабочей станции юриста.
       </p>
     </div>
     <div class="portal-actions">
       <a href="/cases" class="portal-button portal-button--secondary">
         <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-arrow-right"></use></svg>
-        <span>Р’РµСЂРЅСѓС‚СЊСЃСЏ Рє РїРѕСЂС‚С„РµР»СЋ</span>
+        <span>Вернуться к портфелю</span>
       </a>
+      {% if user.role.value == 'ADMIN' %}
+      <form method="post" action="/cases/{{ legal_case.id }}/delete" data-confirm-form data-confirm-title="Удалить дело?" data-confirm-text="Будут удалены карточка дела, задачи, документы, календарные события, сообщения и комментарии. Действие нельзя быстро отменить.">
+        <input type="hidden" name="return_to" value="/cases" />
+        <button type="submit" class="portal-button portal-button--danger-ghost">Удалить дело</button>
+      </form>
+      {% endif %}
     </div>
   </div>
 
@@ -57,59 +62,59 @@
       {% if legal_case.is_consultation %}
       <p class="ops-secondary">Дело-консультация: доступен чат, задачи по делу не назначаются.</p>
       {% endif %}
-      <p class="case-hero__description">{{ legal_case.description or 'РћРїРёСЃР°РЅРёРµ РґРµР»Р° Р±СѓРґРµС‚ СѓС‚РѕС‡РЅРµРЅРѕ РєРѕРјР°РЅРґРѕР№ РїСЂРё СЃР»РµРґСѓСЋС‰РµРј РѕР±РЅРѕРІР»РµРЅРёРё РєР°СЂС‚РѕС‡РєРё.' }}</p>
+      <p class="case-hero__description">{{ legal_case.description or 'Описание дела будет уточнено командой при следующем обновлении карточки.' }}</p>
 
       <div class="ops-case-hero__facts">
         <article class="ops-fact-card">
-          <span>РљР»РёРµРЅС‚</span>
-          <strong>{{ detail.client.name if detail.client else 'РќРµ СѓРєР°Р·Р°РЅ' }}</strong>
+          <span>Клиент</span>
+          <strong>{{ detail.client.name if detail.client else 'Не указан' }}</strong>
         </article>
         <article class="ops-fact-card">
-          <span>РћС‚РІРµС‚СЃС‚РІРµРЅРЅС‹Р№ СЋСЂРёСЃС‚</span>
-          <strong>{{ detail.assigned_lawyer.full_name or detail.assigned_lawyer.username if detail.assigned_lawyer else 'РќРµ РЅР°Р·РЅР°С‡РµРЅ' }}</strong>
+          <span>Стадия дела</span>
+          <strong>{{ detail.stage_label }}</strong>
+          <small>{{ detail.next_action.description }}</small>
+        </article>
+        <article class="ops-fact-card">
+          <span>Ответственный юрист</span>
+          <strong>{{ detail.assigned_lawyer.full_name or detail.assigned_lawyer.username if detail.assigned_lawyer else 'Не назначен' }}</strong>
           {% if detail.assigned_lawyer and detail.assigned_lawyer.specialization %}
           <small>{{ detail.assigned_lawyer.specialization }}</small>
+          {% else %}
+          <small>Назначение влияет на доступы, задачи и коммуникацию.</small>
           {% endif %}
         </article>
         <article class="ops-fact-card">
-          <span>Р”РµРґР»Р°Р№РЅ</span>
-          <strong>{{ legal_case.deadline.strftime('%d.%m.%Y') if legal_case.deadline else 'РќРµ РЅР°Р·РЅР°С‡РµРЅ' }}</strong>
+          <span>Уровень приоритета</span>
+          <strong>{{ detail.priority_label }}</strong>
+          <small>Приоритет помогает команде распределять фокус по задачам и срокам.</small>
+        </article>
+          <article class="ops-fact-card">
+          <span>Документы</span>
+          <strong>{{ detail.stats.documents_count }}</strong>
+          <small>{% if detail.documents %}Последний файл: {{ detail.documents[0].name }}{% else %}Документы по делу пока не загружены.{% endif %}</small>
         </article>
         <article class="ops-fact-card">
-          <span>РљР°С‚РµРіРѕСЂРёСЏ</span>
-          <strong>{{ legal_case.category }}</strong>
+          <span>Ближайшее важное действие</span>
+          <strong>{{ detail.next_action.label }}</strong>
+          <small>{{ detail.next_action.description }}</small>
         </article>
-        <article class="ops-fact-card">
-          <span>РЎС‚Р°С‚СѓСЃ СЂРёСЃРєР°</span>
-          <strong>{{ detail.risk.label }}</strong>
-        </article>
-        <article class="ops-fact-card">
-          <span>РЎР»РµРґСѓСЋС‰РµРµ СЃРѕР±С‹С‚РёРµ</span>
-          <strong>{{ next_event.title if next_event else 'РќРµС‚ Р·Р°РїР»Р°РЅРёСЂРѕРІР°РЅРЅС‹С… СЃРѕР±С‹С‚РёР№' }}</strong>
-        </article>
-      </div>
-
-      <div class="ops-suggestion">
-        <strong>Assistant summary</strong>
-        <p>{{ detail.assistant.summary }}</p>
       </div>
     </div>
 
     <aside class="case-hero__panel">
-      <div class="case-hero__panel-title">Action panel</div>
+      <div class="case-hero__panel-title">Панель действий</div>
       <div class="case-hero__panel-body is-accent">
-        <strong>РРЅС„РѕСЂРјР°С†РёСЏ РїРѕ РґРµР»Сѓ</strong>
+        <strong>Информация по делу</strong>
         <p>
-          РћС‚РєСЂС‹С‚С‹С… Р·Р°РґР°С‡: {{ detail.stats.tasks_open }}.
-          Р”РѕРєСѓРјРµРЅС‚РѕРІ: {{ detail.stats.documents_count }}.
-          РљРѕРјРјСѓРЅРёРєР°С†РёР№: {{ detail.stats.messages_count }}.
+          Открытых задач: {{ detail.stats.tasks_open }}.
+          Документов: {{ detail.stats.documents_count }}.
+          Коммуникаций: {{ detail.stats.messages_count }}.
         </p>
       </div>
 
       <section class="workspace-card ops-action-panel">
         <div class="workspace-card__header">
-          <h3>Р‘С‹СЃС‚СЂС‹Рµ РґРµР№СЃС‚РІРёСЏ</h3>
-          <span class="workspace-badge {{ risk_chip }}">{{ detail.risk.label }}</span>
+          <h3>Быстрые действия</h3>
         </div>
         <form method="post" action="/cases/{{ legal_case.id }}/stage" class="ops-inline-form js-status-form" data-status-kind="case">
           <input type="hidden" name="return_to" value="/cases/{{ legal_case.id }}?tab=overview#case-hero" />
@@ -118,72 +123,57 @@
             <option value="{{ stage.value }}" {% if stage == legal_case.stage %}selected{% endif %}>{{ stage_labels[stage] }}</option>
             {% endfor %}
           </select>
-          <button type="submit">РЎРјРµРЅРёС‚СЊ СЃС‚Р°РґРёСЋ</button>
+          <button type="submit">Сменить стадию</button>
         </form>
-        <a href="/cases/{{ legal_case.id }}?tab=tasks#tasks-panel" class="portal-button portal-button--primary">РЎРѕР·РґР°С‚СЊ Р·Р°РґР°С‡Сѓ</a>
-        <a href="/cases/{{ legal_case.id }}?tab=events#events-panel" class="portal-button portal-button--ghost">Р”РѕР±Р°РІРёС‚СЊ СЃРѕР±С‹С‚РёРµ</a>
-        <a href="/cases/{{ legal_case.id }}?tab=documents#documents-panel" class="portal-button portal-button--ghost">Р—Р°РіСЂСѓР·РёС‚СЊ РґРѕРєСѓРјРµРЅС‚</a>
-        <a href="/cases/{{ legal_case.id }}?tab=communication#communication-panel" class="portal-button portal-button--ghost">РќР°РїРёСЃР°С‚СЊ РєР»РёРµРЅС‚Сѓ</a>
-        <a href="/cases/{{ legal_case.id }}?tab=history#history-panel" class="portal-button portal-button--ghost">РџРѕСЃРјРѕС‚СЂРµС‚СЊ РёСЃС‚РѕСЂРёСЋ</a>
+        <a href="/cases/{{ legal_case.id }}?tab=tasks#tasks-panel" class="portal-button portal-button--primary">Создать задачу</a>
+        <a href="/cases/{{ legal_case.id }}?tab=events#events-panel" class="portal-button portal-button--ghost">Добавить событие</a>
+        <a href="/cases/{{ legal_case.id }}?tab=documents#documents-panel" class="portal-button portal-button--ghost">Загрузить документ</a>
+        <a href="/cases/{{ legal_case.id }}?tab=communication#communication-panel" class="portal-button portal-button--ghost">Написать клиенту</a>
+        <a href="/cases/{{ legal_case.id }}?tab=history#history-panel" class="portal-button portal-button--ghost">Посмотреть историю</a>
       </section>
 
-      <section class="workspace-card">
-        <div class="workspace-card__header">
-          <h3>РљРѕРЅС‚СЂРѕР»СЊРЅС‹Рµ СЃРёРіРЅР°Р»С‹</h3>
-        </div>
-        <div class="workspace-signals">
-          {% for signal in detail.assistant.signals %}
-          <span class="workspace-signal">{{ signal }}</span>
-          {% endfor %}
-        </div>
-        {% if detail.required_documents %}
-        <div class="workspace-meta">
-          <span class="workspace-meta__label">Р•С‰Рµ СЃС‚РѕРёС‚ Р·Р°РїСЂРѕСЃРёС‚СЊ</span>
-          <strong>{{ detail.required_documents|join(', ') }}</strong>
-        </div>
-        {% endif %}
-      </section>
+      
     </aside>
   </article>
 
-  <div class="ops-kpi-grid">
+  <div class="ops-kpi-grid ops-kpi-grid--5" id="case-kpi-grid">
     <article class="ops-kpi-card">
       <div class="ops-kpi-card__icon ops-kpi-card__icon--navy"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-check-square"></use></svg></div>
-      <div class="ops-kpi-card__content"><span>РћС‚РєСЂС‹С‚С‹Рµ Р·Р°РґР°С‡Рё</span><strong>{{ detail.stats.tasks_open }}</strong><small>РўРµРєСѓС‰РёР№ РёСЃРїРѕР»РЅРёС‚РµР»СЊСЃРєРёР№ РєРѕРЅС‚СѓСЂ РґРµР»Р°</small></div>
+      <div class="ops-kpi-card__content"><span>Открытые задачи</span><strong>{{ detail.stats.tasks_open }}</strong><small>Текущий исполнительский контур дела</small></div>
     </article>
     <article class="ops-kpi-card">
       <div class="ops-kpi-card__icon ops-kpi-card__icon--danger"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-alert-circle"></use></svg></div>
-      <div class="ops-kpi-card__content"><span>РџСЂРѕСЃСЂРѕС‡РµРЅРЅС‹Рµ</span><strong>{{ detail.overdue_tasks|length }}</strong><small>Р—Р°РґР°С‡Рё, С‚СЂРµР±СѓСЋС‰РёРµ РЅРµРјРµРґР»РµРЅРЅРѕРіРѕ РІРЅРёРјР°РЅРёСЏ</small></div>
+      <div class="ops-kpi-card__content"><span>Просроченные</span><strong>{{ detail.overdue_tasks|length }}</strong><small>Задачи, требующие немедленного внимания</small></div>
     </article>
     <article class="ops-kpi-card">
       <div class="ops-kpi-card__icon ops-kpi-card__icon--brand"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-file"></use></svg></div>
-      <div class="ops-kpi-card__content"><span>Р”РѕРєСѓРјРµРЅС‚С‹</span><strong>{{ detail.stats.documents_count }}</strong><small>РњР°С‚РµСЂРёР°Р»С‹ Рё РІРµСЂСЃРёРё РїРѕ РґРµР»Сѓ</small></div>
+      <div class="ops-kpi-card__content"><span>Документы</span><strong>{{ detail.stats.documents_count }}</strong><small>Материалы и версии по делу</small></div>
     </article>
     <article class="ops-kpi-card">
       <div class="ops-kpi-card__icon ops-kpi-card__icon--info"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-message"></use></svg></div>
-      <div class="ops-kpi-card__content"><span>РљРѕРјРјСѓРЅРёРєР°С†РёРё</span><strong>{{ detail.stats.messages_count }}</strong><small>РЎРѕРѕР±С‰РµРЅРёСЏ Рё РєРѕРЅС‚Р°РєС‚С‹ СЃ РєР»РёРµРЅС‚РѕРј</small></div>
+      <div class="ops-kpi-card__content"><span>Коммуникации</span><strong>{{ detail.stats.messages_count }}</strong><small>Сообщения и контакты с клиентом</small></div>
     </article>
     <article class="ops-kpi-card">
       <div class="ops-kpi-card__icon ops-kpi-card__icon--warning"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-calendar"></use></svg></div>
-      <div class="ops-kpi-card__content"><span>РЎРѕР±С‹С‚РёСЏ Рё СЃСЂРѕРєРё</span><strong>{{ detail.stats.events_count }}</strong><small>РљР°Р»РµРЅРґР°СЂРЅС‹Рµ С‚РѕС‡РєРё РєРѕРЅС‚СЂРѕР»СЏ</small></div>
+      <div class="ops-kpi-card__content"><span>События и сроки</span><strong>{{ detail.stats.events_count }}</strong><small>Календарные точки контроля</small></div>
     </article>
   </div>
 
   <section class="portal-card portal-card--panel" data-view-root data-default-view="{{ active_tab }}">
-    <nav class="case-tabs ops-case-tabs" aria-label="Р Р°Р·РґРµР»С‹ РєР°СЂС‚РѕС‡РєРё РґРµР»Р°">
-      <button type="button" class="case-tabs__link" data-view-button="overview">РћР±Р·РѕСЂ</button>
-      <button type="button" class="case-tabs__link" data-view-button="tasks">Р—Р°РґР°С‡Рё</button>
-      <button type="button" class="case-tabs__link" data-view-button="documents">Р”РѕРєСѓРјРµРЅС‚С‹</button>
-      <button type="button" class="case-tabs__link" data-view-button="communication">РљРѕРјРјСѓРЅРёРєР°С†РёСЏ</button>
-      <button type="button" class="case-tabs__link" data-view-button="events">РЎРѕР±С‹С‚РёСЏ Рё СЃСЂРѕРєРё</button>
-      <button type="button" class="case-tabs__link" data-view-button="participants">РЈС‡Р°СЃС‚РЅРёРєРё</button>
-      <button type="button" class="case-tabs__link" data-view-button="history">РСЃС‚РѕСЂРёСЏ РёР·РјРµРЅРµРЅРёР№</button>
+    <nav class="case-tabs ops-case-tabs" aria-label="Разделы карточки дела">
+      <button type="button" class="case-tabs__link" data-view-button="overview">Обзор</button>
+      <button type="button" class="case-tabs__link" data-view-button="tasks">Задачи</button>
+      <button type="button" class="case-tabs__link" data-view-button="documents">Документы</button>
+      <button type="button" class="case-tabs__link" data-view-button="communication">Коммуникация</button>
+      <button type="button" class="case-tabs__link" data-view-button="events">События и сроки</button>
+      <button type="button" class="case-tabs__link" data-view-button="participants">Участники</button>
+      <button type="button" class="case-tabs__link" data-view-button="history">История изменений</button>
     </nav>
 
     <div class="ops-tab-panel" data-view-panel="overview" id="overview-panel">
       <div class="ops-grid-split">
         <article class="overview-panel">
-          <h3>РџСЂРѕРіСЂРµСЃСЃ РїРѕ СЌС‚Р°РїР°Рј</h3>
+          <h3>Прогресс по этапам</h3>
           <div class="stage-progress">
             {% for step in detail.stage_progress %}
             <div class="stage-progress__item is-{{ step.state }}">
@@ -192,11 +182,11 @@
                 <strong>{{ loop.index }}. {{ step.label }}</strong>
                 <small>
                   {% if step.state == 'done' %}
-                    Р­С‚Р°Рї Р·Р°РІРµСЂС€РµРЅ
+                    Этап завершен
                   {% elif step.state == 'current' %}
-                    РўРµРєСѓС‰РёР№ С„РѕРєСѓСЃ РєРѕРјР°РЅРґС‹
+                    Текущий фокус команды
                   {% else %}
-                    РЎР»РµРґСѓСЋС‰РёР№ СЌС‚Р°Рї
+                    Следующий этап
                   {% endif %}
                 </small>
               </div>
@@ -206,14 +196,15 @@
         </article>
 
         <article class="overview-panel">
-          <h3>Р РёСЃРєРё РїРѕ РґРµР»Сѓ</h3>
+          <h3>Ключевые ориентиры</h3>
           <div class="ops-data-list">
-            {% for item in detail.risk.items %}
+            {% for step in detail.assistant.next_steps %}
             <article class="ops-data-list__item">
-              <div class="ops-inline-meta">
-                <span class="workspace-badge workspace-badge--{{ item.level }}">{{ item.level|upper }}</span>
-              </div>
-              <p>{{ item.text }}</p>
+              <p>{{ step }}</p>
+            </article>
+            {% else %}
+            <article class="ops-data-list__item">
+              <p>Следующие шаги появятся после обновления стадии или задач по делу.</p>
             </article>
             {% endfor %}
           </div>
@@ -222,29 +213,29 @@
 
       <div class="ops-grid-split">
         <article class="overview-panel">
-          <h3>Р‘Р»РёР¶Р°Р№С€РёРµ Р·Р°РґР°С‡Рё</h3>
+          <h3>Ближайшие задачи</h3>
           <div class="mini-feed">
             {% for task in detail.tasks[:5] %}
             <article class="mini-feed__item">
               <div class="mini-feed__row">
                 <div>
                   <strong>{{ task.title }}</strong>
-                  <p>{{ task.assignee_name }} вЂў {{ task.due_date.strftime('%d.%m.%Y') }} вЂў {{ task.status_label }}</p>
+                  <p>{{ task.assignee_name }} • {{ task.due_date.strftime('%d.%m.%Y') }} • {{ task.status_label }}</p>
                 </div>
                 <span class="ops-chip ops-chip--{{ (task.priority or 'MEDIUM')|lower }}">{{ task.priority_label }}</span>
               </div>
             </article>
             {% else %}
             <div class="portal-empty portal-empty--compact">
-              <h3>Р—Р°РґР°С‡ РїРѕРєР° РЅРµС‚</h3>
-              <p>РЎРѕР·РґР°Р№С‚Рµ РїРµСЂРІСѓСЋ Р·Р°РґР°С‡Сѓ, С‡С‚РѕР±С‹ Р·Р°РґР°С‚СЊ С‚РµРјРї СЂР°Р±РѕС‚С‹ РїРѕ РґРµР»Сѓ.</p>
+              <h3>Задач пока нет</h3>
+              <p>Создайте первую задачу, чтобы задать темп работы по делу.</p>
             </div>
             {% endfor %}
           </div>
         </article>
 
         <article class="overview-panel">
-          <h3>Р‘Р»РёР¶Р°Р№С€РёРµ СЃСЂРѕРєРё Рё СЃРѕР±С‹С‚РёСЏ</h3>
+          <h3>Ближайшие сроки и события</h3>
           <div class="timeline-list">
             {% for item in detail.events[:5] %}
             <article class="timeline-item{% if item.urgency == 'danger' %} is-danger{% elif item.urgency == 'warning' %} is-warning{% endif %}">
@@ -263,8 +254,8 @@
             </article>
             {% else %}
             <div class="portal-empty portal-empty--compact">
-              <h3>РЎРѕР±С‹С‚РёСЏ РЅРµ Р·Р°РїР»Р°РЅРёСЂРѕРІР°РЅС‹</h3>
-              <p>Р”РѕР±Р°РІСЊС‚Рµ РєР°Р»РµРЅРґР°СЂРЅРѕРµ СЃРѕР±С‹С‚РёРµ, С‡С‚РѕР±С‹ РєРѕРЅС‚СЂРѕР»РёСЂРѕРІР°С‚СЊ Р±Р»РёР¶Р°Р№С€РёРµ С‚РѕС‡РєРё РґРµР»Р°.</p>
+              <h3>События не запланированы</h3>
+              <p>Добавьте календарное событие, чтобы контролировать ближайшие точки дела.</p>
             </div>
             {% endfor %}
           </div>
@@ -273,20 +264,20 @@
 
       <div class="ops-grid-split">
         <article class="overview-panel">
-          <h3>РџРѕСЃР»РµРґРЅРёРµ РґРѕРєСѓРјРµРЅС‚С‹</h3>
+          <h3>Последние документы</h3>
           <div class="mini-feed">
             {% for item in detail.documents[:4] %}
             <article class="mini-feed__item">
               <div class="mini-feed__row">
                 <div>
                   <strong>{{ item.name }}</strong>
-                  <p>{{ item.source }} вЂў {{ item.created_at.strftime('%d.%m.%Y %H:%M') }}</p>
+                  <p>{{ item.source }} • {{ item.created_at.strftime('%d.%m.%Y %H:%M') }}</p>
                 </div>
                 <div class="mini-feed__actions">
-                  <a href="/documents/{{ item.id }}/view" class="mini-feed__action" target="_blank" rel="noopener" title="РћС‚РєСЂС‹С‚СЊ">
+                  <a href="/documents/{{ item.id }}/view" class="mini-feed__action" target="_blank" rel="noopener" title="Открыть">
                     <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-eye"></use></svg>
                   </a>
-                  <a href="/documents/{{ item.id }}/download" class="mini-feed__action" title="РЎРєР°С‡Р°С‚СЊ">
+                  <a href="/documents/{{ item.id }}/download" class="mini-feed__action" title="Скачать">
                     <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-download"></use></svg>
                   </a>
                 </div>
@@ -294,15 +285,15 @@
             </article>
             {% else %}
             <div class="portal-empty portal-empty--compact">
-              <h3>Р”РѕРєСѓРјРµРЅС‚РѕРІ РїРѕРєР° РЅРµС‚</h3>
-              <p>Document center РїРѕСЏРІРёС‚СЃСЏ РїРѕСЃР»Рµ РїРµСЂРІРѕР№ Р·Р°РіСЂСѓР·РєРё С„Р°Р№Р»РѕРІ.</p>
+              <h3>Документов пока нет</h3>
+              <p>Раздел документов появится после первой загрузки файлов.</p>
             </div>
             {% endfor %}
           </div>
         </article>
 
         <article class="overview-panel">
-          <h3>РџРѕСЃР»РµРґРЅРёРµ СЃРѕРѕР±С‰РµРЅРёСЏ Рё РґРµР№СЃС‚РІРёСЏ РєР»РёРµРЅС‚Р°</h3>
+          <h3>Последние сообщения и действия клиента</h3>
           <div class="action-list">
             {% for item in detail.client_actions[:4] %}
             <article class="action-list__item">
@@ -319,8 +310,8 @@
             </article>
             {% else %}
             <div class="portal-empty portal-empty--compact">
-              <h3>РљРѕРјРјСѓРЅРёРєР°С†РёР№ РїРѕРєР° РЅРµС‚</h3>
-              <p>РљРѕРіРґР° РєР»РёРµРЅС‚ РёР»Рё РєРѕРјР°РЅРґР° РґРѕР±Р°РІСЏС‚ СЃРѕРѕР±С‰РµРЅРёРµ, РѕРЅРѕ РїРѕСЏРІРёС‚СЃСЏ Р·РґРµСЃСЊ.</p>
+              <h3>Коммуникаций пока нет</h3>
+              <p>Когда клиент или команда добавят сообщение, оно появится здесь.</p>
             </div>
             {% endfor %}
             {% endfor %}
@@ -329,15 +320,15 @@
       </div>
 
       <article class="overview-panel">
-        <h3>TOPSIS Рё СЂРµРєРѕРјРµРЅРґР°С†РёРё РїРѕ РґРµР»Сѓ</h3>
+        <h3>Рекомендации по делу</h3>
         <div class="ops-grid-split">
           <div class="ops-suggestion">
-            <strong>РџСЂРµРґРёРєС‚РёРІРЅР°СЏ РєР°С‚РµРіРѕСЂРёСЏ</strong>
+            <strong>Предиктивная категория</strong>
             <p>{{ detail.assistant.predicted_category }}</p>
           </div>
           <div class="ops-suggestion">
-            <strong>РЎР»РµРґСѓСЋС‰РёРµ С€Р°РіРё</strong>
-            <p>{{ detail.assistant.next_steps|join(' вЂў ') if detail.assistant.next_steps else 'РЎР»РµРґСѓСЋС‰РёРµ С€Р°РіРё Р±СѓРґСѓС‚ СЃС„РѕСЂРјРёСЂРѕРІР°РЅС‹ РїРѕ РјРµСЂРµ РЅР°РєРѕРїР»РµРЅРёСЏ РґР°РЅРЅС‹С… РїРѕ РґРµР»Сѓ.' }}</p>
+            <strong>Следующие шаги</strong>
+            <p>{{ detail.assistant.next_steps|join(', ') if detail.assistant.next_steps else 'Следующие шаги будут сформированы по мере накопления данных по делу.' }}</p>
           </div>
         </div>
         <div class="ops-records-grid">
@@ -345,21 +336,21 @@
           <article class="ops-record-card">
             <div class="ops-record-card__header">
               <div>
-                <div class="ops-record-card__number">TOPSIS suggestion</div>
+                <div class="ops-record-card__number">Рекомендация системы</div>
                 <h3>{{ suggestion.user.full_name or suggestion.user.username }}</h3>
               </div>
               <span class="status-badge status-badge--brand-soft">{{ '%.4f'|format(suggestion.score) }}</span>
             </div>
             <div class="ops-inline-meta">
-              <span>{{ suggestion.user.specialization or 'РћР±С‰Р°СЏ РїСЂР°РєС‚РёРєР°' }}</span>
-              <span>РќР°РіСЂСѓР·РєР°: {{ suggestion.user.current_load }}</span>
-              <span>РџРѕС…РѕР¶РёС… РґРµР»: {{ suggestion.user.similar_cases_experience }}</span>
+              <span>{{ suggestion.user.specialization or 'Общая практика' }}</span>
+              <span>Нагрузка: {{ suggestion.user.current_load }}</span>
+              <span>Похожих дел: {{ suggestion.user.similar_cases_experience }}</span>
             </div>
           </article>
           {% else %}
           <div class="portal-empty portal-empty--compact">
-            <h3>Р РµРєРѕРјРµРЅРґР°С†РёРё РїРѕРєР° РЅРµ СЃРѕР±СЂР°РЅС‹</h3>
-            <p>РџРѕСЃР»Рµ СѓС‚РѕС‡РЅРµРЅРёСЏ РєР°С‚РµРіРѕСЂРёРё Рё СЃРѕСЃС‚Р°РІР° РєРѕРјР°РЅРґС‹ Р·РґРµСЃСЊ РїРѕСЏРІСЏС‚СЃСЏ РєР°РЅРґРёРґР°С‚СѓСЂС‹ Рё РїРѕРґСЃРєР°Р·РєРё.</p>
+            <h3>Рекомендации пока не собраны</h3>
+            <p>После уточнения категории и состава команды здесь появятся кандидатуры и подсказки.</p>
           </div>
           {% endfor %}
         </div>
@@ -370,48 +361,49 @@
       <div class="ops-kpi-grid ops-kpi-grid--4">
         <article class="ops-kpi-card">
           <div class="ops-kpi-card__icon ops-kpi-card__icon--navy"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-check-square"></use></svg></div>
-          <div class="ops-kpi-card__content"><span>Р’СЃРµРіРѕ Р·Р°РґР°С‡</span><strong>{{ detail.stats.tasks_total }}</strong><small>Р’СЃРµ СЌР»РµРјРµРЅС‚С‹ РёСЃРїРѕР»РЅРµРЅРёСЏ РїРѕ РґРµР»Сѓ</small></div>
+          <div class="ops-kpi-card__content"><span>Всего задач</span><strong>{{ detail.stats.tasks_total }}</strong><small>Все элементы исполнения по делу</small></div>
         </article>
         <article class="ops-kpi-card">
           <div class="ops-kpi-card__icon ops-kpi-card__icon--brand"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-layout-grid"></use></svg></div>
-          <div class="ops-kpi-card__content"><span>Р’ СЂР°Р±РѕС‚Рµ</span><strong>{{ detail.stats.tasks_open }}</strong><small>РћС‚РєСЂС‹С‚С‹Рµ Р·Р°РґР°С‡Рё РїРѕ С‚РµРєСѓС‰РµРјСѓ РґРµР»Сѓ</small></div>
+          <div class="ops-kpi-card__content"><span>В работе</span><strong>{{ detail.stats.tasks_open }}</strong><small>Открытые задачи по текущему делу</small></div>
         </article>
         <article class="ops-kpi-card">
           <div class="ops-kpi-card__icon ops-kpi-card__icon--danger"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-alert-circle"></use></svg></div>
-          <div class="ops-kpi-card__content"><span>РџСЂРѕСЃСЂРѕС‡РµРЅРЅС‹Рµ</span><strong>{{ detail.overdue_tasks|length }}</strong><small>РќСѓР¶РґР°СЋС‚СЃСЏ РІ СЂРµР°РєС†РёРё СЃРµР№С‡Р°СЃ</small></div>
+          <div class="ops-kpi-card__content"><span>Просроченные</span><strong>{{ detail.overdue_tasks|length }}</strong><small>Нуждаются в реакции сейчас</small></div>
         </article>
         <article class="ops-kpi-card">
           <div class="ops-kpi-card__icon ops-kpi-card__icon--warning"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-clock-3"></use></svg></div>
-          <div class="ops-kpi-card__content"><span>РќР° СЃРµРіРѕРґРЅСЏ</span><strong>{{ detail.today_tasks|length }}</strong><small>Р”РѕР»Р¶РЅС‹ Р±С‹С‚СЊ Р·Р°РєСЂС‹С‚С‹ СЃРµРіРѕРґРЅСЏ</small></div>
+          <div class="ops-kpi-card__content"><span>На сегодня</span><strong>{{ detail.today_tasks|length }}</strong><small>Должны быть закрыты сегодня</small></div>
         </article>
       </div>
 
+      {% if legal_case.intake_approved and not legal_case.is_consultation %}
       <details class="ops-disclosure" open>
         <summary>
           <div class="ops-disclosure__summary-copy">
-            <strong>РЎРѕР·РґР°С‚СЊ Р·Р°РґР°С‡Сѓ РїРѕ РґРµР»Сѓ</strong>
-            <span>Р—Р°РґР°С‡Р° СЃСЂР°Р·Сѓ РїРѕРїР°РґРµС‚ РІ task center, РєР°Р»РµРЅРґР°СЂСЊ СЃСЂРѕРєРѕРІ Рё РѕРїРµСЂР°С†РёРѕРЅРЅС‹Рµ СЃРІРѕРґРєРё.</span>
+            <strong>Создать задачу по делу</strong>
+            <span>Задача сразу появится в разделе задач, календаре сроков и рабочих сводках.</span>
           </div>
           <span class="ops-disclosure__summary-icon">
-            <span>РћС‚РєСЂС‹С‚СЊ С„РѕСЂРјСѓ</span>
+            <span>Открыть форму</span>
             <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-chevron-down"></use></svg>
           </span>
         </summary>
         <div class="ops-disclosure__body">
-          <form method="post" action="/tasks/new" class="portal-form">
+          <form method="post" action="/tasks/new" class="portal-form" data-partial-refresh-form data-refresh-targets="#case-hero,#case-kpi-grid,#tasks-panel">
             <input type="hidden" name="legal_case_id" value="{{ legal_case.id }}" />
             <input type="hidden" name="return_to" value="/cases/{{ legal_case.id }}?tab=tasks#tasks-panel" />
             <div class="portal-form-grid portal-form-grid--2">
               <label class="portal-field">
-                <span>РќР°Р·РІР°РЅРёРµ Р·Р°РґР°С‡Рё</span>
+                <span>Название задачи</span>
                 <input class="portal-control" type="text" name="title" required />
               </label>
               <label class="portal-field">
-                <span>РЎСЂРѕРє</span>
+                <span>Срок</span>
                 <input class="portal-control" type="date" name="due_date" required />
               </label>
               <label class="portal-field">
-                <span>РЎС‚Р°С‚СѓСЃ</span>
+                <span>Статус</span>
                 <select class="portal-control" name="status">
                   {% for status in status_labels %}
                   <option value="{{ status.value }}">{{ status_labels[status] }}</option>
@@ -419,34 +411,42 @@
                 </select>
               </label>
               <label class="portal-field">
-                <span>РџСЂРёРѕСЂРёС‚РµС‚</span>
+                <span>Приоритет</span>
                 <select class="portal-control" name="priority">
-                  <option value="LOW">РќРёР·РєРёР№</option>
-                  <option value="MEDIUM" selected>РЎСЂРµРґРЅРёР№</option>
-                  <option value="HIGH">Р’С‹СЃРѕРєРёР№</option>
+                  <option value="LOW">Низкий</option>
+                  <option value="MEDIUM" selected>Средний</option>
+                  <option value="HIGH">Высокий</option>
                 </select>
               </label>
               <label class="portal-field">
-                <span>РСЃРїРѕР»РЅРёС‚РµР»СЊ</span>
+                <span>Исполнитель</span>
                 <select class="portal-control" name="assignee_id">
-                  <option value="">РќРµ РЅР°Р·РЅР°С‡РµРЅ</option>
-                  {% for lawyer in detail.eligible_lawyers %}
-                  <option value="{{ lawyer.id }}" {% if detail.assigned_lawyer and lawyer.id == detail.assigned_lawyer.id %}selected{% endif %}>{{ lawyer.full_name or lawyer.username }}{% if lawyer.specialization %} вЂ” {{ lawyer.specialization }}{% endif %}</option>
+                  <option value="">Не назначен</option>
+                  {% for lawyer in detail.team_lawyers %}
+                  <option value="{{ lawyer.id }}" {% if detail.assigned_lawyer and lawyer.id == detail.assigned_lawyer.id %}selected{% endif %}>{{ lawyer.full_name or lawyer.username }}{% if lawyer.specialization %} — {{ lawyer.specialization }}{% endif %}</option>
                   {% endfor %}
                 </select>
+                <small>Исполнитель выбирается из команды дела. Добавить участников можно на вкладке “Участники”.</small>
               </label>
               <label class="portal-field portal-field--span-2">
-                <span>РћРїРёСЃР°РЅРёРµ</span>
+                <span>Описание</span>
                 <textarea class="portal-control" name="description" rows="4"></textarea>
               </label>
             </div>
             <div class="portal-form__footer portal-form__footer--split">
-              <div class="portal-form__note">РСЃРїРѕР»СЊР·СѓР№С‚Рµ РїРѕРЅСЏС‚РЅРѕРµ РЅР°Р·РІР°РЅРёРµ Рё РґРµРґР»Р°Р№РЅ, С‡С‚РѕР±С‹ Р·Р°РґР°С‡Р° С…РѕСЂРѕС€Рѕ С‡РёС‚Р°Р»Р°СЃСЊ РІ task center Рё РєР°Р»РµРЅРґР°СЂРµ.</div>
-              <button type="submit" class="portal-button portal-button--primary">РЎРѕС…СЂР°РЅРёС‚СЊ Р·Р°РґР°С‡Сѓ</button>
+              <div class="portal-form__note">Используйте понятные название и срок, чтобы задача хорошо читалась в разделе задач и календаре.</div>
+
+              <button type="submit" class="portal-button portal-button--primary">Сохранить задачу</button>
             </div>
           </form>
         </div>
       </details>
+      {% else %}
+      <div class="portal-empty portal-empty--compact">
+        <h3>Задачи пока недоступны</h3>
+        <p>{% if legal_case.is_consultation %}Для консультаций задачи не создаются.{% else %}Задачи можно назначать только после принятия обращения в работу.{% endif %}</p>
+      </div>
+      {% endif %}
 
       <div class="ops-feed">
         {% for task in detail.tasks %}
@@ -461,8 +461,8 @@
             </span>
           </div>
           <div class="ops-inline-meta">
-            <span>РСЃРїРѕР»РЅРёС‚РµР»СЊ: {{ task.assignee_name }}</span>
-            <span>РЎСЂРѕРє: {{ task.due_date.strftime('%d.%m.%Y') }}</span>
+            <span>Исполнитель: {{ task.assignee_name }}</span>
+            <span>Срок: {{ task.due_date.strftime('%d.%m.%Y') }}</span>
             <span class="ops-chip ops-chip--{{ (task.priority or 'MEDIUM')|lower }}">{{ task.priority_label }}</span>
           </div>
           {% if task.description %}
@@ -474,7 +474,11 @@
               <option value="{{ status.value }}" {% if status == task.status %}selected{% endif %}>{{ status_labels[status] }}</option>
               {% endfor %}
             </select>
-            <button type="submit">РћР±РЅРѕРІРёС‚СЊ СЃС‚Р°С‚СѓСЃ</button>
+            <button type="submit">Обновить статус</button>
+          </form>
+          <form method="post" action="/tasks/{{ task.id }}/delete" data-confirm-form data-confirm-title="Удалить задачу?" data-confirm-text="Задача будет удалена из дела, списка задач и календарных сроков.">
+            <input type="hidden" name="return_to" value="/cases/{{ legal_case.id }}?tab=tasks#tasks-panel" />
+            <button type="submit" class="portal-button portal-button--danger-ghost">Удалить</button>
           </form>
         </article>
         {% else %}
@@ -482,8 +486,8 @@
           <div class="portal-empty__icon">
             <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-check-square"></use></svg>
           </div>
-          <h3>РџРѕ РґРµР»Сѓ РµС‰Рµ РЅРµС‚ Р·Р°РґР°С‡</h3>
-          <p>РЎРѕР·РґР°Р№С‚Рµ РїРµСЂРІСѓСЋ Р·Р°РґР°С‡Сѓ, С‡С‚РѕР±С‹ РѕРїРµСЂР°С†РёРѕРЅРЅС‹Р№ РєРѕРЅС‚СѓСЂ РїРµСЂРµСЃС‚Р°Р» Р±С‹С‚СЊ вЂњРїСѓСЃС‚РѕР№ РєР°СЂС‚РѕС‡РєРѕР№вЂќ.</p>
+          <h3>По делу еще нет задач</h3>
+          <p>Создайте первую задачу, чтобы операционный контур перестал быть “пустой карточкой”.</p>
         </div>
         {% endfor %}
       </div>
@@ -493,43 +497,30 @@
       <div class="ops-grid-split">
         <article class="workspace-card">
           <div class="workspace-card__header">
-            <h3>Upload zone</h3>
-            <span class="workspace-signal">{{ detail.stats.documents_count }} С„Р°Р№Р»РѕРІ</span>
+            <h3>Загрузка документов</h3>
+            <span class="workspace-signal">{{ detail.stats.documents_count }} файлов</span>
           </div>
           <form method="post" action="/cases/{{ legal_case.id }}/documents/upload" class="upload-zone" enctype="multipart/form-data" data-upload-zone>
             <div class="upload-zone__icon">
               <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-paperclip"></use></svg>
             </div>
             <div class="upload-zone__copy">
-              <strong>РџРµСЂРµС‚Р°С‰РёС‚Рµ С„Р°Р№Р»С‹ РёР»Рё РІС‹Р±РµСЂРёС‚Рµ РІСЂСѓС‡РЅСѓСЋ</strong>
-              <p>Р”РѕРєСѓРјРµРЅС‚С‹ СЃСЂР°Р·Сѓ РїРѕСЏРІСЏС‚СЃСЏ РІ document center РґРµР»Р° Рё РІ РёСЃС‚РѕСЂРёРё РёР·РјРµРЅРµРЅРёР№.</p>
+              <strong>Перетащите файлы или выберите вручную</strong>
+              <p>Документы сразу появятся в разделе документов дела и в истории изменений.</p>
             </div>
             <label class="portal-button portal-button--secondary upload-zone__button">
               <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-paperclip"></use></svg>
-              <span>Р’С‹Р±СЂР°С‚СЊ С„Р°Р№Р»С‹</span>
+              <span>Выбрать файлы</span>
               <input class="upload-zone__input" type="file" name="documents" multiple required />
             </label>
             <label class="portal-field portal-field--span-2">
-              <span>РљРѕРјРјРµРЅС‚Р°СЂРёР№ Рє Р·Р°РіСЂСѓР·РєРµ</span>
-              <textarea class="portal-control" name="description" rows="4" placeholder="РќР°РїСЂРёРјРµСЂ: РєРѕРјРїР»РµРєС‚ РёСЃРєРѕРІС‹С… РґРѕРєСѓРјРµРЅС‚РѕРІ, РїСЂРёР»РѕР¶РµРЅРёРµ РѕС‚ РєР»РёРµРЅС‚Р°, РїРѕРґРїРёСЃР°РЅРЅС‹Рµ РІРµСЂСЃРёРё"></textarea>
+              <span>Комментарий к загрузке</span>
+              <textarea class="portal-control" name="description" rows="4" placeholder="Например: комплект исковых документов, приложение от клиента, подписанные версии"></textarea>
             </label>
-            <small class="upload-zone__meta" data-upload-label>Р¤Р°Р№Р»С‹ РЅРµ РІС‹Р±СЂР°РЅС‹</small>
+            <small class="upload-zone__meta" data-upload-label>Файлы не выбраны</small>
             <ul class="upload-zone__pending" data-upload-pending hidden></ul>
-            <button type="submit" class="portal-button portal-button--primary" data-upload-submit disabled>Р—Р°РіСЂСѓР·РёС‚СЊ РІ РґРµР»Рѕ</button>
+            <button type="submit" class="portal-button portal-button--primary" data-upload-submit disabled>Загрузить в дело</button>
           </form>
-        </article>
-
-        <article class="workspace-card">
-          <div class="workspace-card__header">
-            <h3>Р§С‚Рѕ РµС‰Рµ Р·Р°РїСЂРѕСЃРёС‚СЊ</h3>
-          </div>
-          <div class="ops-tag-list">
-            {% for name in detail.required_documents %}
-            <span class="workspace-signal">{{ name }}</span>
-            {% else %}
-            <p class="workspace-list__empty">Р‘Р°Р·РѕРІС‹Р№ РєРѕРјРїР»РµРєС‚ РїРѕ РґРµР»Сѓ СѓР¶Рµ СЃРѕР±СЂР°РЅ.</p>
-            {% endfor %}
-          </div>
         </article>
       </div>
 
@@ -546,10 +537,10 @@
             <span>{{ item.description }}</span>
           </div>
           <div class="ops-inline-actions">
-            <a href="/documents/{{ item.id }}/view" class="portal-button portal-button--ghost" target="_blank" rel="noopener">РћС‚РєСЂС‹С‚СЊ</a>
-            <a href="/documents/{{ item.id }}/download" class="portal-button portal-button--ghost">РЎРєР°С‡Р°С‚СЊ</a>
-            <form method="post" action="/documents/{{ item.id }}/delete">
-              <button type="submit" class="portal-button portal-button--danger">РЈРґР°Р»РёС‚СЊ</button>
+            <a href="/documents/{{ item.id }}/view" class="portal-button portal-button--ghost" target="_blank" rel="noopener">Открыть</a>
+            <a href="/documents/{{ item.id }}/download" class="portal-button portal-button--ghost">Скачать</a>
+            <form method="post" action="/documents/{{ item.id }}/delete" data-confirm-form data-confirm-title="Удалить документ?" data-confirm-text="Документ будет удален из карточки дела и истории материалов без возможности быстрого восстановления.">
+              <button type="submit" class="portal-button portal-button--danger-ghost">Удалить</button>
             </form>
           </div>
         </article>
@@ -558,8 +549,8 @@
           <div class="portal-empty__icon">
             <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-file"></use></svg>
           </div>
-          <h3>Document center РїРѕРєР° РїСѓСЃС‚</h3>
-          <p>РџРѕСЃР»Рµ РїРµСЂРІРѕР№ Р·Р°РіСЂСѓР·РєРё Р·РґРµСЃСЊ РїРѕСЏРІСЏС‚СЃСЏ С„Р°Р№Р»С‹, РёСЃС‚РѕС‡РЅРёРєРё, РІСЂРµРјРµРЅРЅС‹Рµ РјРµС‚РєРё Рё РґРµР№СЃС‚РІРёСЏ РїРѕ РґРѕРєСѓРјРµРЅС‚Р°Рј.</p>
+          <h3>Раздел документов пока пуст</h3>
+          <p>После первой загрузки здесь появятся файлы, источники, временные метки и действия по документам.</p>
         </div>
         {% endfor %}
       </div>
@@ -570,8 +561,7 @@
         <div class="client-chat-main">
           <section class="workspace-card">
             <div class="workspace-card__header">
-              <h3>РСЃС‚РѕСЂРёСЏ РїРµСЂРµРїРёСЃРєРё</h3>
-              <span class="workspace-signal">{{ detail.stats.messages_count }} СЃРѕРѕР±С‰РµРЅРёР№</span>
+              <h3>История переписки</h3>
             </div>
             <div class="ops-chat-thread">
               {% for item in detail.messages %}
@@ -583,30 +573,30 @@
                 <p class="ops-summary">{{ item.message }}</p>
               </article>
               {% else %}
-              <p class="workspace-list__empty">РџРµСЂРµРїРёСЃРєР° РїРѕ РґРµР»Сѓ РїРѕРєР° РЅРµ РЅР°С‡Р°С‚Р°.</p>
+              <p class="workspace-list__empty">Переписка по делу пока не начата.</p>
               {% endfor %}
             </div>
           </section>
 
           <section class="workspace-card">
             <div class="workspace-card__header">
-              <h3>РќР°РїРёСЃР°С‚СЊ РєР»РёРµРЅС‚Сѓ</h3>
+              <h3>Написать клиенту</h3>
             </div>
             {% if detail.client %}
-            <form method="post" action="/clients/{{ detail.client.id }}/chat" class="client-chat-form">
+            <form method="post" action="/clients/{{ detail.client.id }}/chat" class="client-chat-form" data-partial-refresh-form data-refresh-targets="#case-hero,#case-kpi-grid,#communication-panel">
               <input type="hidden" name="legal_case_id" value="{{ legal_case.id }}" />
               <input type="hidden" name="return_to" value="/cases/{{ legal_case.id }}?tab=communication#communication-panel" />
               <label>
-                РЎРѕРѕР±С‰РµРЅРёРµ
-                <textarea name="message" rows="5" placeholder="РЎС„РѕСЂРјСѓР»РёСЂСѓР№С‚Рµ СЃР»РµРґСѓСЋС‰РёР№ С€Р°Рі, Р·Р°РїСЂРѕСЃРёС‚Рµ РґРѕРєСѓРјРµРЅС‚ РёР»Рё РґР°Р№С‚Рµ СЃС‚Р°С‚СѓСЃ РїРѕ РґРµР»Сѓ" required></textarea>
+                Сообщение
+                <textarea name="message" rows="5" placeholder="Сформулируйте следующий шаг, запросите документ или дайте статус по делу" required></textarea>
               </label>
               <div class="portal-form__footer portal-form__footer--split">
-                <div class="portal-form__note">Р’Р»РѕР¶РµРЅРёСЏ РґРѕР±Р°РІР»СЏСЋС‚СЃСЏ С‡РµСЂРµР· РІРєР»Р°РґРєСѓ вЂњР”РѕРєСѓРјРµРЅС‚С‹вЂќ, С‡С‚РѕР±С‹ РёСЃС‚РѕСЂРёСЏ РїРµСЂРµРїРёСЃРєРё РѕСЃС‚Р°РІР°Р»Р°СЃСЊ С‡РёСЃС‚РѕР№ Рё СЃС‚СЂСѓРєС‚СѓСЂРёСЂРѕРІР°РЅРЅРѕР№.</div>
-                <button type="submit" class="portal-button portal-button--primary">РћС‚РїСЂР°РІРёС‚СЊ РєР»РёРµРЅС‚Сѓ</button>
+                <div class="portal-form__note">Вложения добавляются через вкладку “Документы”, чтобы история переписки оставалась чистой и структурированной.</div>
+                <button type="submit" class="portal-button portal-button--primary">Отправить клиенту</button>
               </div>
             </form>
             {% else %}
-            <p class="workspace-list__empty">РљР°СЂС‚РѕС‡РєР° РєР»РёРµРЅС‚Р° РЅРµ РЅР°Р№РґРµРЅР°, РѕС‚РїСЂР°РІРєР° СЃРѕРѕР±С‰РµРЅРёСЏ РЅРµРґРѕСЃС‚СѓРїРЅР°.</p>
+            <p class="workspace-list__empty">Карточка клиента не найдена, отправка сообщения недоступна.</p>
             {% endif %}
           </section>
         </div>
@@ -614,7 +604,7 @@
         <aside class="client-chat-overview">
           <section class="workspace-card">
             <div class="workspace-card__header">
-              <h3>РќРѕРІС‹Рµ РґРµР№СЃС‚РІРёСЏ РєР»РёРµРЅС‚Р°</h3>
+              <h3>Новые действия клиента</h3>
             </div>
             <div class="ops-data-list">
               {% for item in detail.client_actions %}
@@ -624,20 +614,57 @@
                 <time>{{ item.date.strftime('%d.%m.%Y %H:%M') }}</time>
               </article>
               {% else %}
-              <p class="workspace-list__empty">РћС‚ РєР»РёРµРЅС‚Р° РїРѕРєР° РЅРµ РїРѕСЃС‚СѓРїР°Р»Рѕ РЅРѕРІС‹С… РґРµР№СЃС‚РІРёР№.</p>
+              <p class="workspace-list__empty">От клиента пока не поступало новых действий.</p>
               {% endfor %}
             </div>
           </section>
 
           <section class="workspace-card">
             <div class="workspace-card__header">
-              <h3>РџРѕРґСЃРєР°Р·РєРё РґР»СЏ РѕС‚РІРµС‚Р°</h3>
+              <h3>Юристы в чате</h3>
+            </div>
+            <div class="ops-data-list">
+              {% for lawyer in detail.team_lawyers %}
+              <article class="ops-data-list__item">
+                <strong>{{ lawyer.full_name or lawyer.username }}</strong>
+                <p>{{ lawyer.specialization or 'Юрист по делу' }}</p>
+                {% if not detail.assigned_lawyer or lawyer.id != detail.assigned_lawyer.id %}
+                {% if user.role.value == 'ADMIN' or user.id != lawyer.id %}
+                <form method="post" action="/cases/{{ legal_case.id }}/chat-lawyers/{{ lawyer.id }}/remove" class="ops-inline-form" data-confirm-form data-confirm-title="Удалить юриста из чата?" data-confirm-text="Юрист потеряет доступ к коммуникации по делу, но сама карточка дела останется доступной, если он назначен участником команды.">
+                  <input type="hidden" name="return_to" value="/cases/{{ legal_case.id }}?tab=communication#communication-panel" />
+                  <button type="submit">Удалить из чата</button>
+                </form>
+                {% endif %}
+                {% else %}
+                <small class="ops-secondary">Ответственный юрист</small>
+                {% endif %}
+              </article>
+              {% else %}
+              <p class="workspace-list__empty">Юристы к чату пока не подключены.</p>
+              {% endfor %}
+            </div>
+            {% if detail.available_chat_lawyers %}
+            <form method="post" action="/cases/{{ legal_case.id }}/chat-lawyers/add" class="ops-inline-form">
+              <input type="hidden" name="return_to" value="/cases/{{ legal_case.id }}?tab=communication#communication-panel" />
+              <select name="lawyer_id" required>
+                {% for lawyer in detail.available_chat_lawyers %}
+                <option value="{{ lawyer.id }}">{{ lawyer.full_name or lawyer.username }}{% if lawyer.specialization %} — {{ lawyer.specialization }}{% endif %}</option>
+                {% endfor %}
+              </select>
+              <button type="submit">Подключить юриста</button>
+            </form>
+            {% endif %}
+          </section>
+
+          <section class="workspace-card">
+            <div class="workspace-card__header">
+              <h3>Подсказки для ответа</h3>
             </div>
             <ul class="workspace-list">
               {% for step in detail.assistant.next_steps %}
               <li>{{ step }}</li>
               {% else %}
-              <li class="workspace-list__empty">РџРѕРґСЃРєР°Р·РєРё РїРѕСЏРІСЏС‚СЃСЏ РїРѕСЃР»Рµ СЃР»РµРґСѓСЋС‰РµРіРѕ РѕР±РЅРѕРІР»РµРЅРёСЏ РґРµР»Р°.</li>
+              <li class="workspace-list__empty">Подсказки появятся после следующего обновления дела.</li>
               {% endfor %}
             </ul>
           </section>
@@ -649,9 +676,9 @@
       <div class="ops-grid-split">
         <article class="workspace-card">
           <div class="workspace-card__header">
-            <h3>Р”РѕР±Р°РІРёС‚СЊ СЃРѕР±С‹С‚РёРµ РёР»Рё СЃСЂРѕРє</h3>
+            <h3>Добавить событие или срок</h3>
           </div>
-          <form method="post" action="/calendar/events/new" class="portal-form">
+          <form method="post" action="/calendar/events/new" class="portal-form" data-partial-refresh-form data-refresh-targets="#case-hero,#case-kpi-grid,#events-panel">
             <input type="hidden" name="legal_case_id" value="{{ legal_case.id }}" />
             <input type="hidden" name="return_to" value="/cases/{{ legal_case.id }}?tab=events#events-panel" />
             {% if detail.assigned_lawyer %}
@@ -659,44 +686,44 @@
             {% endif %}
             <div class="portal-form-grid portal-form-grid--2">
               <label class="portal-field">
-                <span>РќР°Р·РІР°РЅРёРµ СЃРѕР±С‹С‚РёСЏ</span>
+                <span>Название события</span>
                 <input class="portal-control" type="text" name="title" required />
               </label>
               <label class="portal-field">
-                <span>Р”Р°С‚Р°</span>
+                <span>Дата</span>
                 <input class="portal-control" type="date" name="event_date" required />
               </label>
               <label class="portal-field">
-                <span>РўРёРї</span>
+                <span>Тип</span>
                 <select class="portal-control" name="event_type">
-                  <option value="COURT">РЎСѓРґРµР±РЅРѕРµ Р·Р°СЃРµРґР°РЅРёРµ</option>
-                  <option value="MEETING">Р’СЃС‚СЂРµС‡Р°</option>
-                  <option value="CLIENT">РћС‚РІРµС‚ РєР»РёРµРЅС‚Сѓ</option>
-                  <option value="DOCUMENT">Р”РѕРєСѓРјРµРЅС‚С‹</option>
-                  <option value="DEADLINE">Р’РЅСѓС‚СЂРµРЅРЅРёР№ РґРµРґР»Р°Р№РЅ</option>
-                  <option value="CUSTOM">Р”СЂСѓРіРѕРµ СЃРѕР±С‹С‚РёРµ</option>
+                  <option value="COURT">Судебное заседание</option>
+                  <option value="MEETING">Встреча</option>
+                  <option value="CLIENT">Ответ клиенту</option>
+                  <option value="DOCUMENT">Документы</option>
+                  <option value="DEADLINE">Внутренний срок выполнения</option>
+                  <option value="CUSTOM">Другое событие</option>
                 </select>
               </label>
             </div>
             <div class="portal-form__footer portal-form__footer--split">
-              <div class="portal-form__note">РЎРѕР±С‹С‚РёРµ РїРѕРїР°РґРµС‚ РІ РєР°Р»РµРЅРґР°СЂСЊ РґРµРґР»Р°Р№РЅРѕРІ, РґР°С€Р±РѕСЂРґ Рё timeline РґРµР»Р°.</div>
-              <button type="submit" class="portal-button portal-button--primary">РЎРѕС…СЂР°РЅРёС‚СЊ СЃРѕР±С‹С‚РёРµ</button>
+              <div class="portal-form__note">Событие попадет в календарь сроков, рабочую сводку и историю дела.</div>
+              <button type="submit" class="portal-button portal-button--primary">Сохранить событие</button>
             </div>
           </form>
         </article>
 
         <article class="workspace-card">
           <div class="workspace-card__header">
-            <h3>РљР°Р»РµРЅРґР°СЂРЅС‹Р№ СЂРµР¶РёРј РїРѕ РґРµР»Сѓ</h3>
+            <h3>Календарный режим по делу</h3>
           </div>
           <div class="calendar-side-list">
             {% for item in detail.events[:8] %}
             <article class="calendar-side-list__item">
               <strong>{{ item.title }}</strong>
-              <span>{{ item.type }} вЂў {{ item.date.strftime('%d.%m.%Y') }}</span>
+              <span>{{ item.type }} • {{ item.date.strftime('%d.%m.%Y') }}</span>
             </article>
             {% else %}
-            <p class="workspace-list__empty">РЎСЂРѕРєРѕРІ Рё СЃРѕР±С‹С‚РёР№ РїРѕРєР° РЅРµС‚.</p>
+            <p class="workspace-list__empty">Сроков и событий пока нет.</p>
             {% endfor %}
           </div>
         </article>
@@ -720,8 +747,8 @@
         </article>
         {% else %}
         <div class="portal-empty portal-empty--compact">
-          <h3>РЎРѕР±С‹С‚РёСЏ РїРѕ РґРµР»Сѓ РµС‰Рµ РЅРµ СЃРѕР·РґР°РЅС‹</h3>
-          <p>Р”РѕР±Р°РІСЊС‚Рµ Р·Р°СЃРµРґР°РЅРёРµ, РІРЅСѓС‚СЂРµРЅРЅРёР№ РґРµРґР»Р°Р№РЅ, РІСЃС‚СЂРµС‡Сѓ РёР»Рё РѕС‚РІРµС‚ РєР»РёРµРЅС‚Сѓ.</p>
+          <h3>События по делу еще не созданы</h3>
+          <p>Добавьте заседание, внутренний срок выполнения, встречу или ответ клиенту.</p>
         </div>
         {% endfor %}
       </div>
@@ -744,11 +771,11 @@
       <details class="ops-disclosure">
         <summary>
           <div class="ops-disclosure__summary-copy">
-            <strong>РћР±РЅРѕРІРёС‚СЊ РєР°СЂС‚РѕС‡РєСѓ РґРµР»Р°</strong>
-            <span>Р РµРґР°РєС‚РёСЂРѕРІР°РЅРёРµ РѕСЃРЅРѕРІРЅС‹С… СЂРµРєРІРёР·РёС‚РѕРІ Рё РЅР°Р·РЅР°С‡РµРЅРёСЏ РѕС‚РІРµС‚СЃС‚РІРµРЅРЅРѕРіРѕ СЋСЂРёСЃС‚Р°.</span>
+            <strong>Обновить карточку дела</strong>
+            <span>{% if user.role.value == 'ADMIN' %}Редактирование реквизитов и команды юристов.{% else %}Редактирование основных реквизитов дела.{% endif %}</span>
           </div>
           <span class="ops-disclosure__summary-icon">
-            <span>РћС‚РєСЂС‹С‚СЊ С„РѕСЂРјСѓ</span>
+            <span>Открыть форму</span>
             <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#icon-chevron-down"></use></svg>
           </span>
         </summary>
@@ -757,42 +784,53 @@
             <input type="hidden" name="return_to" value="/cases/{{ legal_case.id }}?tab=participants#participants-panel" />
             <div class="portal-form-grid portal-form-grid--2">
               <label class="portal-field">
-                <span>РќР°Р·РІР°РЅРёРµ</span>
+                <span>Название</span>
                 <input class="portal-control" type="text" name="title" value="{{ legal_case.title }}" required />
               </label>
               <label class="portal-field">
-                <span>РљР°С‚РµРіРѕСЂРёСЏ</span>
+                <span>Категория</span>
                 <input class="portal-control" type="text" name="category" value="{{ legal_case.category }}" required />
               </label>
               <label class="portal-field">
-                <span>Р”РµРґР»Р°Р№РЅ</span>
+                <span>Срок выполнения</span>
                 <input class="portal-control" type="date" name="deadline" value="{{ legal_case.deadline.isoformat() if legal_case.deadline else '' }}" />
               </label>
               <label class="portal-field">
-                <span>РџСЂРёРѕСЂРёС‚РµС‚</span>
+                <span>Приоритет</span>
                 <select class="portal-control" name="priority">
-                  <option value="LOW" {% if (legal_case.priority or 'MEDIUM') == 'LOW' %}selected{% endif %}>РќРёР·РєРёР№</option>
-                  <option value="MEDIUM" {% if (legal_case.priority or 'MEDIUM') == 'MEDIUM' %}selected{% endif %}>РЎСЂРµРґРЅРёР№</option>
-                  <option value="HIGH" {% if (legal_case.priority or 'MEDIUM') == 'HIGH' %}selected{% endif %}>Р’С‹СЃРѕРєРёР№</option>
+                  <option value="LOW" {% if (legal_case.priority or 'MEDIUM') == 'LOW' %}selected{% endif %}>Низкий</option>
+                  <option value="MEDIUM" {% if (legal_case.priority or 'MEDIUM') == 'MEDIUM' %}selected{% endif %}>Средний</option>
+                  <option value="HIGH" {% if (legal_case.priority or 'MEDIUM') == 'HIGH' %}selected{% endif %}>Высокий</option>
                 </select>
               </label>
+              {% if user.role.value == 'ADMIN' %}
               <label class="portal-field">
-                <span>РћС‚РІРµС‚СЃС‚РІРµРЅРЅС‹Р№ СЋСЂРёСЃС‚</span>
+                <span>Ответственный юрист</span>
                 <select class="portal-control" name="responsible_lawyer_id">
-                  <option value="">РќРµ РЅР°Р·РЅР°С‡РµРЅ</option>
+                  <option value="">Не назначен</option>
                   {% for lawyer in detail.eligible_lawyers %}
-                  <option value="{{ lawyer.id }}" {% if detail.assigned_lawyer and lawyer.id == detail.assigned_lawyer.id %}selected{% endif %}>{{ lawyer.full_name or lawyer.username }}{% if lawyer.specialization %} вЂ” {{ lawyer.specialization }}{% endif %}</option>
+                  <option value="{{ lawyer.id }}" {% if detail.assigned_lawyer and lawyer.id == detail.assigned_lawyer.id %}selected{% endif %}>{{ lawyer.full_name or lawyer.username }}{% if lawyer.specialization %} — {{ lawyer.specialization }}{% endif %}</option>
                   {% endfor %}
                 </select>
               </label>
+              <label class="portal-field">
+                <span>Команда юристов</span>
+                <select class="portal-control" name="team_lawyer_ids" multiple size="5">
+                  {% for lawyer in detail.eligible_lawyers %}
+                  <option value="{{ lawyer.id }}" {% if lawyer.id in detail.team_lawyer_ids %}selected{% endif %}>{{ lawyer.full_name or lawyer.username }}{% if lawyer.specialization %} — {{ lawyer.specialization }}{% endif %}</option>
+                  {% endfor %}
+                </select>
+                <small>Можно назначить нескольких юристов. Ответственный автоматически входит в команду.</small>
+              </label>
+              {% endif %}
               <label class="portal-field portal-field--span-2">
-                <span>РћРїРёСЃР°РЅРёРµ</span>
+                <span>Описание</span>
                 <textarea class="portal-control" name="description" rows="5">{{ legal_case.description }}</textarea>
               </label>
             </div>
             <div class="portal-form__footer portal-form__footer--split">
-              <div class="portal-form__note">Р­С‚Р° С„РѕСЂРјР° РѕР±РЅРѕРІР»СЏРµС‚ РѕСЃРЅРѕРІРЅСѓСЋ РєР°СЂС‚РѕС‡РєСѓ Р±РµР· РёР·РјРµРЅРµРЅРёСЏ Р±РёР·РЅРµСЃ-Р»РѕРіРёРєРё РґРµР»Р°.</div>
-              <button type="submit" class="portal-button portal-button--primary">РЎРѕС…СЂР°РЅРёС‚СЊ РёР·РјРµРЅРµРЅРёСЏ</button>
+              <div class="portal-form__note">Эта форма обновляет основную карточку без изменения бизнес-логики дела.</div>
+              <button type="submit" class="portal-button portal-button--primary">Сохранить изменения</button>
             </div>
           </form>
         </div>
@@ -803,7 +841,7 @@
       <div class="ops-grid-split">
         <article class="workspace-card">
           <div class="workspace-card__header">
-            <h3>Timeline РёР·РјРµРЅРµРЅРёР№</h3>
+            <h3>Хронология изменений</h3>
           </div>
           <div class="timeline-list timeline-list--detailed">
             {% for item in detail.timeline %}
@@ -815,7 +853,7 @@
               </div>
               <div class="timeline-item__body">
                 <div class="timeline-item__top">
-                  <span class="timeline-item__distance">{{ item.type }} вЂў {{ item.actor }}</span>
+                  <span class="timeline-item__distance">{{ item.type }} / {{ item.actor }}</span>
                 </div>
                 <h3>{{ item.title }}</h3>
                 <p>{{ item.description }}</p>
@@ -823,8 +861,8 @@
             </article>
             {% else %}
             <div class="portal-empty portal-empty--compact">
-              <h3>РСЃС‚РѕСЂРёСЏ РїРѕРєР° РЅРµ СЃС„РѕСЂРјРёСЂРѕРІР°РЅР°</h3>
-              <p>Timeline РЅР°С‡РЅРµС‚ СЃРѕР±РёСЂР°С‚СЊСЃСЏ РїРѕСЃР»Рµ Р·Р°РґР°С‡, РґРѕРєСѓРјРµРЅС‚РѕРІ, СЃРѕРѕР±С‰РµРЅРёР№ Рё СЃРѕР±С‹С‚РёР№ РїРѕ РґРµР»Сѓ.</p>
+              <h3>История пока не сформирована</h3>
+              <p>Хронология начнет собираться после появления задач, документов, сообщений и событий по делу.</p>
             </div>
             {% endfor %}
           </div>
@@ -832,36 +870,36 @@
 
         <article class="workspace-card">
           <div class="workspace-card__header">
-            <h3>Р’РЅСѓС‚СЂРµРЅРЅРёРµ РєРѕРјРјРµРЅС‚Р°СЂРёРё</h3>
+            <h3>Внутренние комментарии</h3>
           </div>
           <div class="comment-thread">
             {% for item in detail.comments %}
             <article class="comment">
               <div class="comment__meta">
                 <strong>{{ item.author }}</strong>
-                <span class="comment__type">{{ 'Р’РЅСѓС‚СЂРµРЅРЅРёР№' if item.is_internal else 'РћС‚РєСЂС‹С‚С‹Р№' }}</span>
+                <span class="comment__type">{{ 'Внутренний' if item.is_internal else 'Открытый' }}</span>
               </div>
               <p class="comment__message">{{ item.message }}</p>
               <div class="ops-secondary">{{ item.created_at }}</div>
             </article>
             {% else %}
-            <p class="workspace-list__empty">РљРѕРјРјРµРЅС‚Р°СЂРёРµРІ РїРѕ РґРµР»Сѓ РїРѕРєР° РЅРµС‚.</p>
+            <p class="workspace-list__empty">Комментариев по делу пока нет.</p>
             {% endfor %}
           </div>
 
-          <form method="post" action="/cases/{{ legal_case.id }}/comments" class="comment-form">
+          <form method="post" action="/cases/{{ legal_case.id }}/comments" class="comment-form" data-partial-refresh-form data-refresh-targets="#case-hero,#history-panel">
             <input type="hidden" name="return_to" value="/cases/{{ legal_case.id }}?tab=history#history-panel" />
             <label>
-              РљРѕРјРјРµРЅС‚Р°СЂРёР№
-              <textarea name="message" rows="4" placeholder="Р—Р°С„РёРєСЃРёСЂСѓР№С‚Рµ РІРЅСѓС‚СЂРµРЅРЅРµРµ Р·Р°РјРµС‡Р°РЅРёРµ, РґРѕРіРѕРІРѕСЂРµРЅРЅРѕСЃС‚СЊ РёР»Рё РєРѕРЅС‚РµРєСЃС‚ РїРѕ РґРµР»Сѓ" required></textarea>
+              Комментарий
+              <textarea name="message" rows="4" placeholder="Зафиксируйте внутреннее замечание, договоренность или контекст по делу" required></textarea>
             </label>
             <label class="comment-form__toggle">
               <input type="checkbox" name="is_internal" value="true" checked />
-              Р’РЅСѓС‚СЂРµРЅРЅРёР№ РєРѕРјРјРµРЅС‚Р°СЂРёР№
+              Внутренний комментарий
             </label>
             <div class="portal-form__footer portal-form__footer--split">
-              <div class="portal-form__note">РљРѕРјРјРµРЅС‚Р°СЂРёР№ РїРѕРїР°РґРµС‚ РІ РёСЃС‚РѕСЂРёСЋ РєР°СЂС‚РѕС‡РєРё Рё Р±СѓРґРµС‚ РґРѕСЃС‚СѓРїРµРЅ СЋСЂРёРґРёС‡РµСЃРєРѕР№ РєРѕРјР°РЅРґРµ.</div>
-              <button type="submit" class="portal-button portal-button--primary">Р”РѕР±Р°РІРёС‚СЊ РєРѕРјРјРµРЅС‚Р°СЂРёР№</button>
+              <div class="portal-form__note">Комментарий попадет в историю карточки и будет доступен юридической команде.</div>
+              <button type="submit" class="portal-button portal-button--primary">Добавить комментарий</button>
             </div>
           </form>
         </article>
@@ -870,3 +908,4 @@
   </section>
 </section>
 {% endblock %}
+
